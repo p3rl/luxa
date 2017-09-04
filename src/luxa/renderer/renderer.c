@@ -143,9 +143,8 @@ lx_result_t create_instance(vulkan_renderer_t *renderer,
 
 	// Log available validaton layers
 	lx_array_t *available_validation_layers = get_available_validation_layers(renderer->allocator);
-	for (uint32_t i = 0; i < lx_array_size(available_validation_layers); ++i) {
-		VkLayerProperties *properties = lx_array_at(available_validation_layers, i);
-		LX_LOG_DEBUG("Renderer", "Found validation layer, name=%s, description=%s", properties->layerName, properties->description);
+	lx_array_for_each(VkLayerProperties, p, available_validation_layers) {
+		LX_LOG_DEBUG("Renderer", "Found validation layer, name=%s, description=%s", p->layerName, p->description);
 	}
 	lx_array_destroy(available_validation_layers);
 
@@ -155,10 +154,10 @@ lx_result_t create_instance(vulkan_renderer_t *renderer,
 		LX_LOG_WARNING("Renderer", "No extensinos found");
 	}
 
-	for (uint32_t i = 0; i < lx_array_size(available_extensions); ++i) {
-		VkExtensionProperties *properties = lx_array_at(available_extensions, i);
-		LX_LOG_DEBUG("Renderer", "Found extension, name=%s", properties->extensionName);
+	lx_array_for_each(VkExtensionProperties, p, available_extensions) {
+		LX_LOG_DEBUG("Renderer", "Found extension, name=%s", p->extensionName);
 	}
+	
 	lx_array_destroy(available_extensions);
 
 	// Setup application info
@@ -252,9 +251,8 @@ lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 	}
 
 	// Log physical devices
-	for (uint32_t i = 0; i < lx_array_size(physical_devices); ++i) {
-		physical_device_t *physical_devce = lx_array_at(physical_devices, i);
-		LX_LOG_DEBUG("Renderer", "Found device, name=%s", physical_devce->properties.deviceName);
+	lx_array_for_each(physical_device_t, p, physical_devices) {
+		LX_LOG_DEBUG("Renderer", "Found device, name=%s", p->properties.deviceName);
 	}
 	
 	return LX_SUCCESS;
@@ -387,8 +385,7 @@ void lx_destroy_renderer(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	
 	// Destroy physical devices
 	if (vulkan_renderer->physical_devices) {
-		for (uint32_t i = 0; i < lx_array_size(vulkan_renderer->physical_devices); ++i) {
-			physical_device_t *physical_device = lx_array_at(vulkan_renderer->physical_devices, i);
+		lx_array_for_each(physical_device_t, physical_device, vulkan_renderer->physical_devices) {
 			lx_array_destroy(physical_device->queue_family_properties);
 		}
 		lx_array_destroy(vulkan_renderer->physical_devices);

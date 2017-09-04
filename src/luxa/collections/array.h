@@ -71,11 +71,17 @@ static bool lx_array_is_empty(lx_array_t *array)
 static void *lx_array_begin(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
-	LX_ASSERT(array->size, "Array is empty");
-	return (void*)(array->buffer);
+	return array->size ? (void*)(array->buffer) : NULL;
 }
 
-static void *lx_array_at(lx_array_t *array, unsigned index)
+static void *lx_array_end(lx_array_t *array)
+{
+	LX_ASSERT(array, "Invalid array");
+	LX_ASSERT(array->size, "Array is empty");
+	return (void*)(array->buffer + (array->size * array->element_size));
+}
+
+static void *lx_array_at(lx_array_t *array, size_t index)
 {
 	LX_ASSERT(array, "Invalid array");
 	LX_ASSERT(index < array->size, "Index out of bounds");
@@ -93,5 +99,8 @@ static size_t lx_array_size(lx_array_t *array)
 	LX_ASSERT(array, "Invalid array");
 	return array->size;
 }
+
+#define lx_array_for_each(type, ptr, arr)\
+	for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
 
 #endif // ARRAY_H
