@@ -26,13 +26,21 @@ do {\
 	}\
 } while(0)
 
-#define LX_EQUALS(a, b) LX_TEST_ASSERT(a == b, (int)a, (int)b, "%d")
+#define LX_EQUALS(a, b) LX_TEST_ASSERT((bool)(a == b), (int)a, (int)b, "%d")
 
 #define LX_NOT_NULL(ptr)\
 do {\
 	if (ptr == NULL) {\
 		test_asserts++;\
 		printf("%s:%d (%s is NULL)\n", __FILE__, __LINE__, #ptr);\
+	}\
+} while(0)
+
+#define LX_TRUE(ok)\
+do {\
+	if (!ok) {\
+		test_asserts++;\
+		printf("%s:%d Expression is NOT true\n", __FILE__, __LINE__);\
 	}\
 } while(0)
 

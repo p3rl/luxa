@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <luxa/memory/allocator.h>
 #include <luxa/collections/array.h>
+#include <luxa/collections/string.h>
 #include <luxa/renderer/renderer.h>
 #include <luxa/log.h>
+#include <luxa/fs.h>
 
 void log(lx_log_level_t log_level, const char *message, void *user_data)
 {
@@ -29,6 +31,7 @@ LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, L
 
 int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line, int cmd_show)
 {
+	lx_string_t *current_dir = lx_fs_current_directory(NULL);
 	lx_allocator_t *allocator = lx_default_allocator();
 	lx_initialize_log(allocator, LX_LOG_LEVEL_TRACE);
 	lx_register_log_target(LX_LOG_LEVEL_TRACE, log, NULL);

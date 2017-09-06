@@ -19,6 +19,10 @@ typedef enum lx_result
 
 #define LX_ASSERT(expr, msg) assert(expr)
 
+#define lx_max(a, b) a > b ? a : b
+
+#define lx_min(a, b) a < b ? a : b
+
 #ifdef __cplusplus
 extern "C" {
 #endif
