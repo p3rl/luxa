@@ -13,7 +13,7 @@ typedef enum lx_log_level
 	LX_LOG_LEVEL_TRACE,
 } lx_log_level_t;
 
-typedef void (*lx_log_callback_t)(lx_log_level_t log_level, const char *message, void *user_data);
+typedef void (*lx_log_callback_t)(time_t time, lx_log_level_t log_level, const char *tag, const char *message, void *user_data);
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +32,8 @@ void lx_shutdown_log();
 void lx_register_log_target(lx_log_level_t log_level, lx_log_callback_t log_callback, void *user_data);
 
 void lx_log(lx_log_level_t level, const char* tag, const char *format, ...);
+
+const char *lx_log_level_to_c_str(lx_log_level_t log_level);
 
 #ifdef __cplusplus
 }

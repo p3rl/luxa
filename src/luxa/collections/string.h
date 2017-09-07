@@ -21,7 +21,7 @@ typedef struct lx_string
 
 static inline lx_string_t *lx_string_create(lx_allocator_t *allocator)
 {
-	lx_allocator_t *a = allocator ? allocator : lx_default_allocator();
+	lx_allocator_t *a = allocator ? allocator : lx_allocator_default();
 	lx_string_t *string = lx_alloc(a, sizeof(lx_string_t));
 	*string = (lx_string_t) { .allocator = a, .size = 0, .capacity = DEFAULT_STRING_CAPACITY };
 	string->s = lx_alloc(a, string->capacity);
@@ -33,7 +33,7 @@ static inline lx_string_t *lx_string_from_c_str(lx_allocator_t *allocator, const
 {
 	LX_ASSERT(s, "Invalid string");
 	const size_t size = strlen(s);
-	lx_allocator_t *a = allocator ? allocator : lx_default_allocator();
+	lx_allocator_t *a = allocator ? allocator : lx_allocator_default();
 	lx_string_t *string = lx_alloc(a, sizeof(lx_string_t));
 	*string = (lx_string_t) { .allocator = a, .size = size, .capacity = lx_max(size + 1, DEFAULT_STRING_CAPACITY) };
 	string->s = lx_alloc(a, string->capacity);

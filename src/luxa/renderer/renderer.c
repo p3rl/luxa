@@ -63,16 +63,16 @@ VkBool32 debug_report_callback(
 	return true;
 }
 
-lx_array_t *get_available_validation_layers(lx_allocator_t *allocator)
+static lx_array_t *get_available_validation_layers(lx_allocator_t *allocator)
 {
-uint32_t num_available_layers = 0;
-vkEnumerateInstanceLayerProperties(&num_available_layers, NULL);
-lx_array_t *layer_properties = lx_array_create_with_size(allocator, sizeof(VkLayerProperties), num_available_layers);
-vkEnumerateInstanceLayerProperties(&num_available_layers, lx_array_begin(layer_properties));
-return layer_properties;
+	uint32_t num_available_layers = 0;
+	vkEnumerateInstanceLayerProperties(&num_available_layers, NULL);
+	lx_array_t *layer_properties = lx_array_create_with_size(allocator, sizeof(VkLayerProperties), num_available_layers);
+	vkEnumerateInstanceLayerProperties(&num_available_layers, lx_array_begin(layer_properties));
+	return layer_properties;
 }
 
-lx_array_t *get_available_extensions(lx_allocator_t *allocator)
+static lx_array_t *get_available_extensions(lx_allocator_t *allocator)
 {
 	uint32_t num_extensions = 0;
 	vkEnumerateInstanceExtensionProperties(NULL, &num_extensions, NULL);
@@ -84,7 +84,7 @@ lx_array_t *get_available_extensions(lx_allocator_t *allocator)
 	return extension_properties;
 }
 
-lx_array_t *get_physical_devices(vulkan_renderer_t *renderer)
+static lx_array_t *get_physical_devices(vulkan_renderer_t *renderer)
 {
 	uint32_t num_devices = 0;
 	vkEnumeratePhysicalDevices(renderer->instance, &num_devices, NULL);
@@ -180,7 +180,7 @@ lx_array_t *get_physical_devices(vulkan_renderer_t *renderer)
 	return renderer->physical_devices;
 }
 
-lx_result_t create_instance(vulkan_renderer_t *renderer,
+static lx_result_t create_instance(vulkan_renderer_t *renderer,
 							const char *validation_layers[],
 							uint32_t num_valiation_layers,
 							const char *extensions[],
@@ -243,7 +243,7 @@ lx_result_t create_instance(vulkan_renderer_t *renderer,
 	return LX_SUCCESS;
 }
 
-lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
+static lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
 {
 	// Setup debug report extension
 	VkDebugReportCallbackCreateInfoEXT debug_report_create_info = { 0 };
@@ -264,7 +264,7 @@ lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-lx_result_t initialize_surfaces(vulkan_renderer_t *renderer, void *window_handle, void *module_handle)
+static lx_result_t initialize_surfaces(vulkan_renderer_t *renderer, void *window_handle, void *module_handle)
 {
 	VkWin32SurfaceCreateInfoKHR surface_create_info;
 	surface_create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -289,7 +289,7 @@ lx_result_t initialize_surfaces(vulkan_renderer_t *renderer, void *window_handle
 	return LX_SUCCESS;
 }
 
-lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
+static lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 {
 	lx_array_t *physical_devices = get_physical_devices(renderer);
 	if (!physical_devices) {
@@ -308,7 +308,7 @@ lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-lx_result_t initialize_logial_devices(
+static lx_result_t initialize_logial_devices(
 	vulkan_renderer_t *renderer,
 	const char *extension_names[],
 	size_t num_extension_names,
@@ -363,7 +363,7 @@ lx_result_t initialize_logial_devices(
 	return LX_SUCCESS;
 }
 
-lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
+static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 	LX_ASSERT(renderer->physical_device, "No physical device(s)");
@@ -480,7 +480,7 @@ lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle)
+lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle)
 {
 	LX_ASSERT(allocator, "Invalid allocator");
 	LX_ASSERT(renderer, "Invalid renderer");
@@ -498,7 +498,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	// Initialize Vulkan instance
 	lx_result_t result = create_instance(vulkan_renderer, layer_names, num_layer_names, extension_names, num_extension_names);
 	if (result != LX_SUCCESS) {
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Vulkan instance [OK]");
@@ -506,7 +506,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	// Initialize extension(s)
 	result = initialize_extensions(vulkan_renderer);
 	if (result != LX_SUCCESS) {
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Vulkan extensions [OK]");
@@ -515,7 +515,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	result = initialize_surfaces(vulkan_renderer, window_handle, module_handle);
 	if (LX_FAILED(result)) {
 		LX_LOG_ERROR("Renderer", "Failed to initialize surface(s)");
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Surface(s) [OK]");
@@ -524,7 +524,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	result = initialize_physical_devices(vulkan_renderer);
 	if (LX_FAILED(result)) {
 		LX_LOG_ERROR("Renderer", "Failed to initialize physical device(s)");
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Physical device(s) [OK]");
@@ -536,7 +536,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	result = initialize_logial_devices(vulkan_renderer, device_extension_names, num_device_extension_names, layer_names, num_layer_names);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR("Renderer", "Failed to initialize logical device(s)");
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Logical device(s) [OK]");
@@ -545,7 +545,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	result = initialize_swap_chain(vulkan_renderer);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR("Renderer", "Failed to initialize swap chain");
-		lx_destroy_renderer(allocator, (lx_renderer_t*)vulkan_renderer);
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG("Renderer", "Swap chain [OK]");
@@ -555,7 +555,7 @@ lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **render
 	return LX_SUCCESS;
 }
 
-void lx_destroy_renderer(lx_allocator_t *allocator, lx_renderer_t *renderer)
+void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 {
 	LX_ASSERT(allocator, "Invalid allocator");
 	LX_ASSERT(renderer, "Invalid renderer");

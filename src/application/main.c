@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <stdio.h>
+#include <time.h>
 #include <luxa/memory/allocator.h>
 #include <luxa/collections/array.h>
 #include <luxa/collections/string.h>
@@ -7,10 +8,18 @@
 #include <luxa/log.h>
 #include <luxa/fs.h>
 
-void log(lx_log_level_t log_level, const char *message, void *user_data)
+void log(time_t time, lx_log_level_t log_level, const char* tag, const char *message, void *user_data)
 {
-	printf(message);
-	OutputDebugString(message);
+	struct tm tm_info;
+	localtime_s(&tm_info, &time);
+	char time_string[64];
+	strftime(time_string, 64, "%H:%M:%S", &tm_info);
+
+	char log[2048];
+	sprintf_s(log, 2048, "[%s][%s][%s]: %s\n", time_string, lx_log_level_to_c_str(log_level), tag, message);
+
+	printf(log);
+	OutputDebugString(log);
 }
 
 LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -31,10 +40,12 @@ LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, L
 
 int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line, int cmd_show)
 {
-	lx_string_t *current_dir = lx_fs_current_directory(NULL);
-	lx_allocator_t *allocator = lx_default_allocator();
+	lx_allocator_t *allocator = lx_allocator_default();
 	lx_initialize_log(allocator, LX_LOG_LEVEL_TRACE);
 	lx_register_log_target(LX_LOG_LEVEL_TRACE, log, NULL);
+
+	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
+	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\vert.spv");
 
 	const char *window_class_name = "LuxaApp";
 
@@ -75,7 +86,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	}
 
 	lx_renderer_t *renderer;
-	lx_create_renderer(allocator, &renderer, window_handle, instance_handle);
+	lx_renderer_create(allocator, &renderer, window_handle, instance_handle);
 
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
@@ -88,7 +99,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 	LX_LOG_INFO(NULL, "Shutting down...");
 		
-	lx_destroy_renderer(allocator, renderer);
+	lx_renderer_destroy(allocator, renderer);
 	lx_shutdown_log();
 	
 	return (int)msg.wParam;

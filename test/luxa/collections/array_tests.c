@@ -5,7 +5,7 @@
 void create_returns_new_array()
 {
 	// Arrange
-	lx_allocator_t *allocator = lx_default_allocator();
+	lx_allocator_t *allocator = lx_allocator_default();
 
 	// Act
 	lx_array_t *numbers = lx_array_create(allocator, sizeof(int));
@@ -20,7 +20,7 @@ void create_returns_new_array()
 void push_back_adds_value()
 {
 	// Arrange
-	lx_allocator_t *allocator = lx_default_allocator();
+	lx_allocator_t *allocator = lx_allocator_default();
 	lx_array_t *numbers = lx_array_create(allocator, sizeof(int));
 
 	// Act

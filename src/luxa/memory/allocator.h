@@ -3,20 +3,20 @@
 
 #include <luxa/platform.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Allocator state
 typedef struct lx_allocator_state lx_allocator_state_t;
 
-// Alloctor interface
+// Allocator interface
 typedef struct lx_allocator {
 	lx_allocator_state_t *state;
 	void *(*realloc)(lx_allocator_state_t *state, void *ptr, size_t size);
 } lx_allocator_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-lx_allocator_t* lx_default_allocator();
+lx_allocator_t* lx_allocator_default();
 
 static inline void *lx_alloc(lx_allocator_t *allocator, size_t size) {
 	return allocator->realloc(allocator->state, NULL, size);

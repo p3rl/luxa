@@ -5,6 +5,9 @@
 #include <string.h>
 #include <time.h>
 
+#define LX_MAX_LOG_MESSAGE_SIZE 2048
+#define LX_DEFAULT_LOG_TAG "General"
+
 typedef struct log_target
 {
 	lx_log_level_t log_level;
@@ -43,23 +46,24 @@ void lx_log(lx_log_level_t log_level, const char *tag, const char *format, ...)
 {
 	va_list list;
 	va_start(list, format);
-	char message[1024];
-	vsprintf_s(message, 1024, format, list);
+	char log_message[LX_MAX_LOG_MESSAGE_SIZE];
+	vsprintf_s(log_message, LX_MAX_LOG_MESSAGE_SIZE, format, list);
 	va_end(list);
 
-	time_t current_time;
-	time(&current_time);
-	struct tm* tm_info;
-	tm_info = localtime(&current_time);
-	char time_tag[64];
-	strftime(time_tag, 64, "%H:%M:%S", tm_info);
+	time_t log_time;
+	time(&log_time);
 
-	char log[2048];
-	sprintf_s(log, 2048, "[%s][%s]: %s\n", time_tag, tag ? tag : "General", message);
+	const char *log_tag = tag ? tag : LX_DEFAULT_LOG_TAG;
 
 	for (unsigned i = 0; i < lx_array_size(_log_targets); ++i) {
 		log_target_t *log_target = (log_target_t*)lx_array_at(_log_targets, i);
 		if (_log_level >= log_target->log_level)
-			log_target->log(log_level, log, log_target->user_data);
+			log_target->log(log_time, log_level, log_tag, log_message, log_target->user_data);
 	}
+}
+
+const char *lx_log_level_to_c_str(lx_log_level_t log_level)
+{
+	static const char *log_level_strings[] = { "", "Error", "Warning", "Info", "Debug", "Trace" };
+	return log_level_strings[log_level];
 }

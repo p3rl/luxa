@@ -4,6 +4,10 @@
 #include <luxa/memory/allocator.h>
 #include <string.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static const unsigned DEFAULT_ARRAY_CAPACITY = 16;
 
 typedef struct lx_array
@@ -102,5 +106,9 @@ static size_t lx_array_size(lx_array_t *array)
 
 #define lx_array_for_each(type, ptr, arr)\
 	for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // ARRAY_H

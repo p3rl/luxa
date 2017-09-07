@@ -3,15 +3,15 @@
 
 #include <luxa/memory/allocator.h>
 
-typedef struct lx_renderer lx_renderer_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-lx_result_t lx_create_renderer(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle);
+typedef struct lx_renderer lx_renderer_t;
 
-void lx_destroy_renderer(lx_allocator_t *allocator, lx_renderer_t *renderer);
+lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle);
+
+void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer);
 
 #ifdef __cplusplus
 }
