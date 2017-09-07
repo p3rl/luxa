@@ -44,9 +44,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	lx_initialize_log(allocator, LX_LOG_LEVEL_TRACE);
 	lx_register_log_target(LX_LOG_LEVEL_TRACE, log, NULL);
 
-	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
-	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\vert.spv");
-
 	const char *window_class_name = "LuxaApp";
 
 	WNDCLASSEX wcex;
@@ -87,6 +84,13 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 	lx_renderer_t *renderer;
 	lx_renderer_create(allocator, &renderer, window_handle, instance_handle);
+
+	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
+	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\vert.spv");
+	lx_renderer_create_shader(renderer, shader_buffer, 1, LX_SHADER_TYPE_VERTEX);
+
+	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\frag.spv");
+	lx_renderer_create_shader(renderer, shader_buffer, 2, LX_SHADER_TYPE_VERTEX);
 
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);

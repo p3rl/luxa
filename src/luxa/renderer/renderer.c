@@ -5,6 +5,13 @@
 #include <vulkan/vulkan.h>
 #include <string.h>
 
+typedef struct shader
+{
+	VkShaderModule handle;
+	uint32_t id;
+	lx_shader_type_t type;
+} shader_t;
+
 typedef struct swap_chain {
 	lx_array_t *images;
 	lx_array_t *image_views;
@@ -41,6 +48,7 @@ typedef struct vulkan_renderer
 {
 	lx_allocator_t *allocator;
 	lx_array_t *physical_devices; // physical_device_t
+	lx_array_t *shaders; //shader_t
 	physical_device_t* physical_device;
 	logical_device_t* device;
 	swap_chain_t *swap_chain;
@@ -48,6 +56,11 @@ typedef struct vulkan_renderer
 	VkDebugReportCallbackEXT debug_report_extension;
 	VkSurfaceKHR presentation_surface;
 } vulkan_renderer_t;
+
+static bool shader_id_equals(shader_t *shader, lx_any_t id)
+{
+	return shader->id == *(uint32_t*)id;
+}
 
 VkBool32 debug_report_callback(
 	VkDebugReportFlagsEXT flags,
@@ -190,7 +203,7 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 
 	// Log available validaton layers
 	lx_array_t *available_validation_layers = get_available_validation_layers(renderer->allocator);
-	lx_array_for_each(VkLayerProperties, p, available_validation_layers) {
+	lx_array_for(VkLayerProperties, p, available_validation_layers) {
 		LX_LOG_DEBUG("Renderer", "Found validation layer, name=%s, description=%s", p->layerName, p->description);
 	}
 	lx_array_destroy(available_validation_layers);
@@ -201,7 +214,7 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 		LX_LOG_WARNING("Renderer", "No extensinos found");
 	}
 
-	lx_array_for_each(VkExtensionProperties, p, available_extensions) {
+	lx_array_for(VkExtensionProperties, p, available_extensions) {
 		LX_LOG_DEBUG("Renderer", "Found extension, name=%s", p->extensionName);
 	}
 	
@@ -298,7 +311,7 @@ static lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 	}
 
 	// Log physical devices
-	lx_array_for_each(physical_device_t, p, physical_devices) {
+	lx_array_for(physical_device_t, p, physical_devices) {
 		LX_LOG_DEBUG("Renderer", "Found device, name=%s", p->properties.deviceName);
 	}
 
@@ -371,7 +384,7 @@ static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 	physical_device_t *physical_device = renderer->physical_device;
 	
 	VkSurfaceFormatKHR surface_format = { 0 };
-	lx_array_for_each(VkSurfaceFormatKHR, sf, physical_device->surface_formats) {
+	lx_array_for(VkSurfaceFormatKHR, sf, physical_device->surface_formats) {
 		if (sf->format == VK_FORMAT_B8G8R8A8_UNORM && sf->colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
 			surface_format = (VkSurfaceFormatKHR) { .format = VK_FORMAT_B8G8R8A8_UNORM,.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
 		}
@@ -382,7 +395,7 @@ static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 	}
 	
 	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-	lx_array_for_each(VkPresentModeKHR, pm, physical_device->present_modes) {
+	lx_array_for(VkPresentModeKHR, pm, physical_device->present_modes) {
 		if (*pm == VK_PRESENT_MODE_MAILBOX_KHR) {
 			present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
 			break;
@@ -452,7 +465,7 @@ static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 	// Create image views for each image
 	swap_chain->image_views = lx_array_create_with_size(renderer->allocator, sizeof(VkImageView), num_images);
 	VkImageView *image_view = lx_array_begin(swap_chain->image_views);
-	lx_array_for_each(VkImage, image, swap_chain->images) {
+	lx_array_for(VkImage, image, swap_chain->images) {
 		VkImageViewCreateInfo create_info = { 0 };
 		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		create_info.image = *image;
@@ -492,8 +505,9 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	const uint32_t num_extension_names = sizeof(extension_names) / sizeof(char*);
 
 	vulkan_renderer_t *vulkan_renderer = lx_alloc(allocator, sizeof(vulkan_renderer_t));
-	memset(vulkan_renderer, 0, sizeof(vulkan_renderer_t));
+	*vulkan_renderer = (vulkan_renderer_t) { 0 };
 	vulkan_renderer->allocator = allocator;
+	vulkan_renderer->shaders = lx_array_create(allocator, sizeof(shader_t));
 
 	// Initialize Vulkan instance
 	lx_result_t result = create_instance(vulkan_renderer, layer_names, num_layer_names, extension_names, num_extension_names);
@@ -562,6 +576,15 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
 
+	// Destroy shaders
+	if (vulkan_renderer->shaders) {
+		lx_array_for(shader_t, shader, vulkan_renderer->shaders) {
+			vkDestroyShaderModule(vulkan_renderer->device->handle, shader->handle, NULL);
+		}
+		lx_array_destroy(vulkan_renderer->shaders);
+		vulkan_renderer->shaders = NULL;
+	}
+	
 	// Destroy swap chain
 	if (vulkan_renderer->swap_chain) {
 		vkDestroySwapchainKHR(vulkan_renderer->device->handle, vulkan_renderer->swap_chain->handle, NULL);
@@ -580,7 +603,7 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	
 	// Destroy physical devices
 	if (vulkan_renderer->physical_devices) {
-		lx_array_for_each(physical_device_t, physical_device, vulkan_renderer->physical_devices) {
+		lx_array_for(physical_device_t, physical_device, vulkan_renderer->physical_devices) {
 			lx_array_destroy(physical_device->queue_family_properties);
 		}
 		lx_array_destroy(vulkan_renderer->physical_devices);
@@ -606,4 +629,31 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	}
 	
 	lx_free(allocator, vulkan_renderer);
+}
+
+lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id, lx_shader_type_t type)
+{
+	LX_ASSERT(code && code->size > 0, "Invalid shader byte code");
+
+	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t *)renderer;
+
+	LX_ASSERT(!lx_array_exists(vulkan_renderer->shaders, shader_id_equals, &id), "Shader already exists");
+	
+	shader_t shader = { .handle = 0, .id = id, .type = type };
+	
+	VkShaderModuleCreateInfo create_info = { 0 };
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.pCode = (uint32_t *)lx_buffer_data(code);
+	create_info.codeSize = lx_buffer_size(code);
+	
+	VkResult result = vkCreateShaderModule(vulkan_renderer->device->handle, &create_info, NULL, &shader.handle);
+	if (result != VK_SUCCESS) {
+		LX_LOG_WARNING("Renderer", "Failed to create shader, id=%d", id);
+		return LX_ERROR;
+	}
+
+	lx_array_push_back(vulkan_renderer->shaders, &shader);
+	LX_LOG_DEBUG("Renderer", "Created shader, id=%d", id);
+
+	return LX_SUCCESS;
 }

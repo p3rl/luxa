@@ -9,6 +9,18 @@
 #define NULL ((void*)0);
 #endif
 
+typedef void* lx_any_t;
+
+typedef void (*lx_unary_func_t)(lx_any_t any);
+
+typedef void (*lx_binary_func_t)(lx_any_t any1, lx_any_t any2);
+
+typedef bool (*lx_unary_predicate_t)(lx_any_t any);
+
+typedef bool (*lx_binary_predicate_t)(lx_any_t any1, lx_any_t any2);
+
+typedef lx_any_t (*lx_map_func_t)(lx_any_t any);
+
 typedef enum lx_result
 {
 	LX_SUCCESS = 0,

@@ -55,7 +55,7 @@ static void lx_array_destroy(lx_array_t *array)
 	lx_free(array->allocator, array);
 }
 
-static void lx_array_push_back(lx_array_t *array, void* element)
+static void lx_array_push_back(lx_array_t *array, lx_any_t element)
 {
 	LX_ASSERT(array, "Invalid array");
 	if (array->size >= array->capacity) {
@@ -72,24 +72,23 @@ static bool lx_array_is_empty(lx_array_t *array)
 	return array->size == 0;
 }
 
-static void *lx_array_begin(lx_array_t *array)
+static lx_any_t lx_array_begin(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
-	return array->size ? (void*)(array->buffer) : NULL;
+	return (void*)(array->buffer);
 }
 
-static void *lx_array_end(lx_array_t *array)
+static lx_any_t lx_array_end(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
-	LX_ASSERT(array->size, "Array is empty");
-	return (void*)(array->buffer + (array->size * array->element_size));
+	return (lx_any_t)(array->buffer + (array->size * array->element_size));
 }
 
-static void *lx_array_at(lx_array_t *array, size_t index)
+static lx_any_t lx_array_at(lx_array_t *array, size_t index)
 {
 	LX_ASSERT(array, "Invalid array");
 	LX_ASSERT(index < array->size, "Index out of bounds");
-	return (void*)(array->buffer + (array->element_size * index));
+	return (lx_any_t)(array->buffer + (array->element_size * index));
 }
 
 static void lx_array_push_back_int(lx_array_t *array, int value)
@@ -104,7 +103,16 @@ static size_t lx_array_size(lx_array_t *array)
 	return array->size;
 }
 
-#define lx_array_for_each(type, ptr, arr)\
+static inline bool lx_array_exists(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+{
+	bool exists = false;
+	for (int i = 0; (i < array->size) && !exists; ++i) {
+		exists = predicate(lx_array_at(array, i), arg);
+	}
+	return exists;
+}
+
+#define lx_array_for(type, ptr, arr)\
 	for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
 
 #ifdef __cplusplus
