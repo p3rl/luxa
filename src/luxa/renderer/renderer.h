@@ -22,6 +22,8 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer);
 
 lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id, lx_shader_type_t type);
 
+lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id);
+
 #ifdef __cplusplus
 }
 #endif

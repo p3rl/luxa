@@ -92,6 +92,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\frag.spv");
 	lx_renderer_create_shader(renderer, shader_buffer, 2, LX_SHADER_TYPE_VERTEX);
 
+	lx_renderer_create_render_pipelines(renderer, 1, 2);
+
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
 

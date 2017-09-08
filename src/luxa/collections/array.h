@@ -105,11 +105,38 @@ static size_t lx_array_size(lx_array_t *array)
 
 static inline bool lx_array_exists(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
+	LX_ASSERT(array, "Invalid array");
+
 	bool exists = false;
 	for (int i = 0; (i < array->size) && !exists; ++i) {
 		exists = predicate(lx_array_at(array, i), arg);
 	}
 	return exists;
+}
+
+static inline lx_range_t lx_array_range(lx_array_t *array)
+{
+	return (lx_range_t) {
+		.begin = array->buffer,
+		.end = array->buffer + array->size * array->element_size,
+		.step_size = array->element_size
+	};
+}
+
+static inline lx_any_t lx_array_find(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+{
+	LX_ASSERT(array, "Invalid array");
+
+	lx_range_t range = lx_array_range(array);
+	char *element = range.begin;
+	while (element != range.end) {
+		if (predicate(element, arg))
+			return element;
+
+		element += range.step_size;
+	}
+
+	return NULL;
 }
 
 #define lx_array_for(type, ptr, arr)\

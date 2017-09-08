@@ -31,9 +31,16 @@ typedef enum lx_result
 
 #define LX_ASSERT(expr, msg) assert(expr)
 
-#define lx_max(a, b) a > b ? a : b
+#define lx_min(a, b) ((a) < (b) ? (a) : (b))
 
-#define lx_min(a, b) a < b ? a : b
+#define lx_max(a, b) ((a) > (b) ? (a) : (b))
+
+typedef struct lx_range
+{
+	lx_any_t begin;
+	lx_any_t end;
+	size_t step_size;
+} lx_range_t;
 
 #ifdef __cplusplus
 extern "C" {
