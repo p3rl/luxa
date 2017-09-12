@@ -5,6 +5,12 @@
 #include <vulkan/vulkan.h>
 #include <string.h>
 
+#define LOG_TAG "Renderer"
+
+typedef struct frame_buffer {
+	VkFramebuffer handle;
+} frame_buffer_t;
+
 typedef struct shader
 {
 	VkShaderModule handle;
@@ -13,8 +19,8 @@ typedef struct shader
 } shader_t;
 
 typedef struct swap_chain {
-	lx_array_t *images;
-	lx_array_t *image_views;
+	lx_array_t *images;					// VkImage
+	lx_array_t *image_views;			// VkImageView
 	VkSwapchainKHR handle;
 	VkPresentModeKHR present_mode;
 	VkSurfaceFormatKHR surface_format;
@@ -47,8 +53,9 @@ typedef struct logical_device
 typedef struct vulkan_renderer
 {
 	lx_allocator_t *allocator;
-	lx_array_t *physical_devices; // physical_device_t
-	lx_array_t *shaders; //shader_t
+	lx_array_t *physical_devices;	// physical_device_t
+	lx_array_t *shaders;			// shader_t
+	lx_array_t *frame_buffers;		// frame_buffer_t
 	physical_device_t* physical_device;
 	logical_device_t* device;
 	swap_chain_t *swap_chain;
@@ -75,7 +82,7 @@ VkBool32 debug_report_callback(
 	const char* message,
 	void* user_data)
 {
-	LX_LOG_WARNING("Renderer", "%s (%s, %d)", message, layer_prefix, message_code);
+	LX_LOG_WARNING(LOG_TAG, "%s (%s, %d)", message, layer_prefix, message_code);
 	return true;
 }
 
@@ -157,34 +164,34 @@ static lx_array_t *get_physical_devices(vulkan_renderer_t *renderer)
 
 		// Surface capabilities
 		if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, renderer->presentation_surface, &physical_device.surface_capabilities) != VK_SUCCESS) {
-			LX_LOG_WARNING("Renderer", "Physical device has no surface capabilities");
+			LX_LOG_WARNING(LOG_TAG, "Physical device has no surface capabilities");
 		}
 
 		// Surface formats
 		uint32_t num_surface_formats;
 		if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device.handle, renderer->presentation_surface, &num_surface_formats, NULL) != VK_SUCCESS) {
-			LX_LOG_WARNING("Renderer", "Failed to get number of surface format(s)");
+			LX_LOG_WARNING(LOG_TAG, "Failed to get number of surface format(s)");
 		}
 
 		if (num_surface_formats) {
 			physical_device.surface_formats = lx_array_create_with_size(renderer->allocator, sizeof(VkSurfaceFormatKHR), num_surface_formats);
 
 			if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device.handle, renderer->presentation_surface, &num_surface_formats, lx_array_begin(physical_device.surface_formats)) != VK_SUCCESS) {
-				LX_LOG_WARNING("Renderer", "Failed to get surface format(s)");
+				LX_LOG_WARNING(LOG_TAG, "Failed to get surface format(s)");
 			}
 		}
 
 		// Presentaton modes
 		uint32_t num_presentation_modes;
 		if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, renderer->presentation_surface, &num_presentation_modes, NULL) != VK_SUCCESS) {
-			LX_LOG_WARNING("Renderer", "Failed to get number of presentation modes");
+			LX_LOG_WARNING(LOG_TAG, "Failed to get number of presentation modes");
 		}
 
 		if (num_presentation_modes) {
 			physical_device.present_modes = lx_array_create_with_size(renderer->allocator, sizeof(VkPresentModeKHR), num_presentation_modes);
 			
 			if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, renderer->presentation_surface, &num_presentation_modes, lx_array_begin(physical_device.present_modes)) != VK_SUCCESS) {
-				LX_LOG_WARNING("Renderer", "Failed to get presentation mode(s)");
+				LX_LOG_WARNING(LOG_TAG, "Failed to get presentation mode(s)");
 			}
 		}
 
@@ -207,18 +214,18 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 	// Log available validaton layers
 	lx_array_t *available_validation_layers = get_available_validation_layers(renderer->allocator);
 	lx_array_for(VkLayerProperties, p, available_validation_layers) {
-		LX_LOG_DEBUG("Renderer", "Found validation layer, name=%s, description=%s", p->layerName, p->description);
+		LX_LOG_DEBUG(LOG_TAG, "Found validation layer, name=%s, description=%s", p->layerName, p->description);
 	}
 	lx_array_destroy(available_validation_layers);
 
 	// Log available extensions
 	lx_array_t *available_extensions = get_available_extensions(renderer->allocator);
 	if (lx_array_is_empty(available_extensions)) {
-		LX_LOG_WARNING("Renderer", "No extensinos found");
+		LX_LOG_WARNING(LOG_TAG, "No extensinos found");
 	}
 
 	lx_array_for(VkExtensionProperties, p, available_extensions) {
-		LX_LOG_DEBUG("Renderer", "Found extension, name=%s", p->extensionName);
+		LX_LOG_DEBUG(LOG_TAG, "Found extension, name=%s", p->extensionName);
 	}
 	
 	lx_array_destroy(available_extensions);
@@ -245,13 +252,13 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 	VkResult result = vkCreateInstance(&create_info, NULL, &renderer->instance);
 	if (result != VK_SUCCESS) {
 		if (result == VK_ERROR_EXTENSION_NOT_PRESENT) {
-			LX_LOG_ERROR("Renderer", "Failed to create Vulkan instance, extension not present");
+			LX_LOG_ERROR(LOG_TAG, "Failed to create Vulkan instance, extension not present");
 		}
 		else if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
-			LX_LOG_ERROR("Renderer", "Incompatible driver");
+			LX_LOG_ERROR(LOG_TAG, "Incompatible driver");
 		}
 		else {
-			LX_LOG_ERROR("Renderer", "Failed to create Vulkan instance");
+			LX_LOG_ERROR(LOG_TAG, "Failed to create Vulkan instance");
 		}
 		return LX_ERROR;
 	}
@@ -271,10 +278,10 @@ static lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
 	*(void **)&create_debug_report_extension = vkGetInstanceProcAddr(renderer->instance, "vkCreateDebugReportCallbackEXT");
 	if (create_debug_report_extension) {
 		create_debug_report_extension(renderer->instance, &debug_report_create_info, NULL, &renderer->debug_report_extension);
-		LX_LOG_DEBUG("Renderer", "Vulkan debug report callback extension [OK]");
+		LX_LOG_DEBUG(LOG_TAG, "Vulkan debug report callback extension [OK]");
 	}
 	else {
-		LX_LOG_WARNING("Renderer", "Vulkan debug report callback extension not present");
+		LX_LOG_WARNING(LOG_TAG, "Vulkan debug report callback extension not present");
 	}
 
 	return LX_SUCCESS;
@@ -292,13 +299,13 @@ static lx_result_t initialize_surfaces(vulkan_renderer_t *renderer, void *window
 	PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR = NULL;
 	*(void**)&vkCreateWin32SurfaceKHR = vkGetInstanceProcAddr(renderer->instance, "vkCreateWin32SurfaceKHR");
 	if (!vkCreateWin32SurfaceKHR) {
-		LX_LOG_ERROR("Renderer", "Failed to get function address vkCreateWin32SurfaceKHR when creating surface");
+		LX_LOG_ERROR(LOG_TAG, "Failed to get function address vkCreateWin32SurfaceKHR when creating surface");
 		return LX_ERROR;
 	}
 
 	VkResult result = vkCreateWin32SurfaceKHR(renderer->instance, &surface_create_info, NULL, &renderer->presentation_surface);
 	if (result != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create Win32 surface (Error: %d", result);
+		LX_LOG_ERROR(LOG_TAG, "Failed to create Win32 surface (Error: %d", result);
 		return LX_ERROR;
 	}
 
@@ -309,17 +316,17 @@ static lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 {
 	lx_array_t *physical_devices = get_physical_devices(renderer);
 	if (!physical_devices) {
-		LX_LOG_ERROR("Renderer", "No devices found");
+		LX_LOG_ERROR(LOG_TAG, "No devices found");
 		return LX_ERROR;
 	}
 
 	// Log physical devices
 	lx_array_for(physical_device_t, p, physical_devices) {
-		LX_LOG_DEBUG("Renderer", "Found device, name=%s", p->properties.deviceName);
+		LX_LOG_DEBUG(LOG_TAG, "Found device, name=%s", p->properties.deviceName);
 	}
 
 	renderer->physical_device = lx_array_begin(renderer->physical_devices);
-	LX_LOG_DEBUG("Renderer", "Using %s as main physical device", renderer->physical_device->properties.deviceName);
+	LX_LOG_DEBUG(LOG_TAG, "Using %s as main physical device", renderer->physical_device->properties.deviceName);
 	
 	return LX_SUCCESS;
 }
@@ -366,7 +373,7 @@ static lx_result_t initialize_logial_devices(
 	VkDevice device;
 	VkResult result = vkCreateDevice(physical_device->handle, &create_info, NULL, &device);
 	if (result != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create logical device (Code: %d)", result);
+		LX_LOG_ERROR(LOG_TAG, "Failed to create logical device (Code: %d)", result);
 		return LX_ERROR;
 	}
 
@@ -448,20 +455,20 @@ static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 	*swap_chain = (swap_chain_t) { .images = 0, .image_views = 0, .present_mode = present_mode, .surface_format = surface_format, .extent = extent };
 	
 	if (vkCreateSwapchainKHR(renderer->device->handle, &create_info, NULL, &swap_chain->handle) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create swap chain");
+		LX_LOG_ERROR(LOG_TAG, "Failed to create swap chain");
 		return LX_ERROR;
 	}
 
 	// Get swap chain images
 	uint32_t num_images;
 	if (vkGetSwapchainImagesKHR(renderer->device->handle, swap_chain->handle, &num_images, NULL) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to get number of swap chain image(s)");
+		LX_LOG_ERROR(LOG_TAG, "Failed to get number of swap chain image(s)");
 		return LX_ERROR;
 	}
 
 	swap_chain->images = lx_array_create_with_size(renderer->allocator, sizeof(VkImage), num_images);
 	if (vkGetSwapchainImagesKHR(renderer->device->handle, swap_chain->handle, &num_images, lx_array_begin(swap_chain->images)) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to get swap chain image(s)");
+		LX_LOG_ERROR(LOG_TAG, "Failed to get swap chain image(s)");
 		return LX_ERROR;
 	}
 
@@ -485,7 +492,7 @@ static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
 		create_info.subresourceRange.layerCount = 1;
 
 		if (vkCreateImageView(renderer->device->handle, &create_info, NULL, image_view) != VK_SUCCESS) {
-			LX_LOG_WARNING("Renderer", "Failed to creat swap chain image view");
+			LX_LOG_WARNING(LOG_TAG, "Failed to creat swap chain image view");
 		}
 
 		++image_view;
@@ -525,8 +532,50 @@ static lx_result_t create_render_pass(vulkan_renderer_t *renderer)
 	render_pass_create_info.pSubpasses = &subpass;
 
 	if (vkCreateRenderPass(renderer->device->handle, &render_pass_create_info, NULL, &renderer->render_pass) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create render pass");
+		LX_LOG_ERROR(LOG_TAG, "Failed to create render pass");
 		return LX_ERROR;
+	}
+
+	return LX_SUCCESS;
+}
+
+static void destroy_frame_buffers(vulkan_renderer_t *renderer)
+{
+	if (!renderer->frame_buffers)
+		return;
+
+	lx_array_for(frame_buffer_t, fb, renderer->frame_buffers) {
+		vkDestroyFramebuffer(renderer->device->handle, fb->handle, NULL);
+	}
+	
+	lx_array_destroy(renderer->frame_buffers);
+	renderer->frame_buffers = NULL;
+}
+
+static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
+{
+	destroy_frame_buffers(renderer);
+	renderer->frame_buffers = lx_array_create(renderer->allocator, sizeof(frame_buffer_t));
+
+	lx_array_for(VkImageView, iv, renderer->swap_chain->image_views) {
+		VkImageView attachments[] = { *iv };
+
+		VkFramebufferCreateInfo frame_buffer_create_info = { 0 };
+		frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		frame_buffer_create_info.renderPass = renderer->render_pass;
+		frame_buffer_create_info.attachmentCount = 1;
+		frame_buffer_create_info.pAttachments = attachments;
+		frame_buffer_create_info.width = renderer->swap_chain->extent.width;
+		frame_buffer_create_info.height = renderer->swap_chain->extent.height;
+		frame_buffer_create_info.layers = 1;
+
+		frame_buffer_t fb = { 0 };
+		if (vkCreateFramebuffer(renderer->device->handle, &frame_buffer_create_info, NULL, &fb.handle) != VK_SUCCESS) {
+			LX_LOG_ERROR(LOG_TAG, "Failed to create frame buffer");
+			return LX_ERROR;
+		}
+
+		lx_array_push_back(renderer->frame_buffers, &fb);
 	}
 
 	return LX_SUCCESS;
@@ -554,7 +603,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Vulkan instance [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Vulkan instance [OK]");
 
 	// Initialize extension(s)
 	result = initialize_extensions(vulkan_renderer);
@@ -562,25 +611,25 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Vulkan extensions [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Vulkan extensions [OK]");
 
 	// Initialize surface(s)
 	result = initialize_surfaces(vulkan_renderer, window_handle, module_handle);
 	if (LX_FAILED(result)) {
-		LX_LOG_ERROR("Renderer", "Failed to initialize surface(s)");
+		LX_LOG_ERROR(LOG_TAG, "Failed to initialize surface(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Surface(s) [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Surface(s) [OK]");
 
 	// Initialize physical device(s)
 	result = initialize_physical_devices(vulkan_renderer);
 	if (LX_FAILED(result)) {
-		LX_LOG_ERROR("Renderer", "Failed to initialize physical device(s)");
+		LX_LOG_ERROR(LOG_TAG, "Failed to initialize physical device(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Physical device(s) [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Physical device(s) [OK]");
 
 	// Initialize logical device(s)
 	const char *device_extension_names[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
@@ -588,20 +637,20 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 
 	result = initialize_logial_devices(vulkan_renderer, device_extension_names, num_device_extension_names, layer_names, num_layer_names);
 	if (result != LX_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to initialize logical device(s)");
+		LX_LOG_ERROR(LOG_TAG, "Failed to initialize logical device(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Logical device(s) [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
 
 	// Initialize swap chain
 	result = initialize_swap_chain(vulkan_renderer);
 	if (result != LX_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to initialize swap chain");
+		LX_LOG_ERROR(LOG_TAG, "Failed to initialize swap chain");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
-	LX_LOG_DEBUG("Renderer", "Swap chain [OK]");
+	LX_LOG_DEBUG(LOG_TAG, "Swap chain [OK]");
 	 
 	// Initialize image views
 	*renderer = (lx_renderer_t*)vulkan_renderer;
@@ -615,6 +664,9 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
 
+	// Destroy frame buffer(s)
+	destroy_frame_buffers(vulkan_renderer);
+	
 	// Destroy render pipline(s)
 	if (vulkan_renderer->pipeline) {
 		vkDestroyPipelineLayout(vulkan_renderer->device->handle, vulkan_renderer->pipeline_layout, NULL);
@@ -637,9 +689,19 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	
 	// Destroy swap chain
 	if (vulkan_renderer->swap_chain) {
+		
+		// Destroy image view(s)
+		if (vulkan_renderer->swap_chain->image_views) {
+			lx_array_for(VkImageView, image_view, vulkan_renderer->swap_chain->image_views) {
+				vkDestroyImageView(vulkan_renderer->device->handle, *image_view, NULL);
+			}
+			lx_array_destroy(vulkan_renderer->swap_chain->image_views);
+			lx_array_destroy(vulkan_renderer->swap_chain->images);
+			vulkan_renderer->swap_chain->image_views = NULL;
+			vulkan_renderer->swap_chain->images = NULL;
+		}
+
 		vkDestroySwapchainKHR(vulkan_renderer->device->handle, vulkan_renderer->swap_chain->handle, NULL);
-		lx_array_destroy(vulkan_renderer->swap_chain->images);
-		lx_array_destroy(vulkan_renderer->swap_chain->image_views);
 		lx_free(vulkan_renderer->allocator, vulkan_renderer->swap_chain);
 		vulkan_renderer->swap_chain = NULL;
 	}
@@ -698,12 +760,12 @@ lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code
 	
 	VkResult result = vkCreateShaderModule(vulkan_renderer->device->handle, &create_info, NULL, &shader.handle);
 	if (result != VK_SUCCESS) {
-		LX_LOG_WARNING("Renderer", "Failed to create shader, id=%d", id);
+		LX_LOG_WARNING(LOG_TAG, "Failed to create shader, id=%d", id);
 		return LX_ERROR;
 	}
 
 	lx_array_push_back(vulkan_renderer->shaders, &shader);
-	LX_LOG_DEBUG("Renderer", "Created shader, id=%d", id);
+	LX_LOG_DEBUG(LOG_TAG, "Created shader, id=%d", id);
 
 	return LX_SUCCESS;
 }
@@ -716,13 +778,13 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 
 	shader_t *vertex_shader = lx_array_find(vulkan_renderer->shaders, shader_id_equals, &vertex_shader_id);
 	if (!vertex_shader) {
-		LX_LOG_ERROR("Renderer", "Vertex shader missing, id=%d", vertex_shader_id);
+		LX_LOG_ERROR(LOG_TAG, "Vertex shader missing, id=%d", vertex_shader_id);
 		return LX_ERROR;
 	}
 
 	shader_t *fragment_shader = lx_array_find(vulkan_renderer->shaders, shader_id_equals, &fragment_shader_id);
 	if (!fragment_shader) {
-		LX_LOG_ERROR("Renderer", "Fragment shader missing, id=%d", fragment_shader_id);
+		LX_LOG_ERROR(LOG_TAG, "Fragment shader missing, id=%d", fragment_shader_id);
 		return LX_ERROR;
 	}
 
@@ -805,11 +867,15 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	pipeline_layout_create_info.pushConstantRangeCount = 0;
 
 	if (vkCreatePipelineLayout(vulkan_renderer->device->handle, &pipeline_layout_create_info, NULL, &vulkan_renderer->pipeline_layout) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create render pipe layout");
+		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe layout");
 		return LX_ERROR;
 	}
 
-	create_render_pass(vulkan_renderer);
+	if (create_render_pass(vulkan_renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create render pass(es)");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Render pass(es) [OK]");
 
 	VkGraphicsPipelineCreateInfo pipeline_create_info = { 0 };
 	pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -827,9 +893,17 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
 
 	if (vkCreateGraphicsPipelines(vulkan_renderer->device->handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &vulkan_renderer->pipeline) != VK_SUCCESS) {
-		LX_LOG_ERROR("Renderer", "Failed to create render pipe");
+		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe");
 		return LX_ERROR;
 	}
 
+	if (create_frame_buffers(vulkan_renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
+
+	
+	LX_LOG_DEBUG(LOG_TAG, "Render pipeline(s) [OK]");
 	return LX_SUCCESS;
 }
