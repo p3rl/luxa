@@ -7,6 +7,12 @@
 
 #define LOG_TAG "Renderer"
 
+typedef struct command_pool {
+	VkCommandPool handle;
+	uint32_t queue_family_index;
+	lx_array_t *command_buffers;
+} command_pool_t;
+
 typedef struct frame_buffer {
 	VkFramebuffer handle;
 } frame_buffer_t;
@@ -59,6 +65,7 @@ typedef struct vulkan_renderer
 	physical_device_t* physical_device;
 	logical_device_t* device;
 	swap_chain_t *swap_chain;
+	command_pool_t *command_pool;
 	VkInstance instance;
 	VkSurfaceKHR presentation_surface;
 	VkPipelineLayout pipeline_layout;
@@ -331,7 +338,7 @@ static lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-static lx_result_t initialize_logial_devices(
+static lx_result_t create_logial_devices(
 	vulkan_renderer_t *renderer,
 	const char *extension_names[],
 	size_t num_extension_names,
@@ -386,7 +393,7 @@ static lx_result_t initialize_logial_devices(
 	return LX_SUCCESS;
 }
 
-static lx_result_t initialize_swap_chain(vulkan_renderer_t *renderer)
+static lx_result_t create_swap_chain(vulkan_renderer_t *renderer)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 	LX_ASSERT(renderer->physical_device, "No physical device(s)");
@@ -581,6 +588,58 @@ static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
+static lx_result_t create_command_pool(vulkan_renderer_t *renderer, uint32_t queue_family_index)
+{
+	const uint32_t num_frame_buffers = (uint32_t)lx_array_size(renderer->frame_buffers);
+	command_pool_t *command_pool = lx_alloc(renderer->allocator, sizeof(command_pool_t));
+
+	LX_ASSERT(renderer->command_pool == NULL, "Command pool already exists");
+	
+	*command_pool = (command_pool_t)
+	{ 
+		.handle = 0,
+		.queue_family_index = queue_family_index,
+		.command_buffers = lx_array_create_with_size(renderer->allocator, sizeof(VkCommandBuffer), num_frame_buffers)
+	};
+
+	VkCommandPoolCreateInfo create_info = { 0 };
+	create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	create_info.queueFamilyIndex = queue_family_index;
+	create_info.flags = 0;
+
+	if (vkCreateCommandPool(renderer->device->handle, &create_info, NULL, &command_pool->handle) != VK_SUCCESS) {
+		lx_array_destroy(command_pool->command_buffers);
+		lx_free(renderer->allocator, command_pool);
+		return LX_ERROR;
+	}
+
+	VkCommandBufferAllocateInfo cmd_buffer_alloc_info = { 0 };
+	cmd_buffer_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmd_buffer_alloc_info.commandPool = command_pool->handle;
+	cmd_buffer_alloc_info.commandBufferCount = num_frame_buffers;
+	cmd_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	if (vkAllocateCommandBuffers(renderer->device->handle, &cmd_buffer_alloc_info, lx_array_begin(command_pool->command_buffers)) != VK_SUCCESS) {
+		lx_array_destroy(command_pool->command_buffers);
+		lx_free(renderer->allocator, command_pool);
+		return LX_ERROR;
+	}
+
+	renderer->command_pool = command_pool;
+
+	return LX_SUCCESS;
+}
+
+static void destroy_command_pool(vulkan_renderer_t *renderer)
+{
+	if (!renderer->command_pool)
+		return;
+	
+	vkDestroyCommandPool(renderer->device->handle, renderer->command_pool->handle, NULL);
+	lx_array_destroy(renderer->command_pool->command_buffers);
+	*renderer->command_pool = (command_pool_t) { 0 };
+}
+
 lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle)
 {
 	LX_ASSERT(allocator, "Invalid allocator");
@@ -635,7 +694,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	const char *device_extension_names[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 	const uint32_t num_device_extension_names = sizeof(device_extension_names) / sizeof(char*);
 
-	result = initialize_logial_devices(vulkan_renderer, device_extension_names, num_device_extension_names, layer_names, num_layer_names);
+	result = create_logial_devices(vulkan_renderer, device_extension_names, num_device_extension_names, layer_names, num_layer_names);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize logical device(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
@@ -644,7 +703,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
 
 	// Initialize swap chain
-	result = initialize_swap_chain(vulkan_renderer);
+	result = create_swap_chain(vulkan_renderer);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize swap chain");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
@@ -664,6 +723,9 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
 
+	// Destroy command pool
+	destroy_command_pool(vulkan_renderer);
+	
 	// Destroy frame buffer(s)
 	destroy_frame_buffers(vulkan_renderer);
 	
@@ -903,7 +965,12 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 
-	
+	if (create_command_pool(vulkan_renderer, vulkan_renderer->physical_device->graphics_queue_family_index) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Command pool [OK]");
+
 	LX_LOG_DEBUG(LOG_TAG, "Render pipeline(s) [OK]");
 	return LX_SUCCESS;
 }
