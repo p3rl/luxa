@@ -72,6 +72,8 @@ typedef struct vulkan_renderer
 	VkPipeline pipeline;
 	VkRenderPass render_pass;
 	VkDebugReportCallbackEXT debug_report_extension;
+	VkSemaphore semaphore_image_available;
+	VkSemaphore semaphore_render_finished;
 } vulkan_renderer_t;
 
 static bool shader_id_equals(shader_t *shader, lx_any_t id)
@@ -91,6 +93,16 @@ VkBool32 debug_report_callback(
 {
 	LX_LOG_WARNING(LOG_TAG, "%s (%s, %d)", message, layer_prefix, message_code);
 	return true;
+}
+
+static lx_result_t create_semaphore(vulkan_renderer_t *renderer, VkSemaphore *semaphore)
+{
+	VkSemaphoreCreateInfo create_info = { 0 };
+	create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	if (vkCreateSemaphore(renderer->device->handle, &create_info, NULL, semaphore) != VK_SUCCESS)
+		return LX_ERROR;
+
+	return LX_SUCCESS;
 }
 
 static lx_array_t *get_available_validation_layers(lx_allocator_t *allocator)
@@ -294,7 +306,7 @@ static lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-static lx_result_t initialize_surfaces(vulkan_renderer_t *renderer, void *window_handle, void *module_handle)
+static lx_result_t create_surfaces(vulkan_renderer_t *renderer, void *window_handle, void *module_handle)
 {
 	VkWin32SurfaceCreateInfoKHR surface_create_info;
 	surface_create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -672,8 +684,8 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Vulkan extensions [OK]");
 
-	// Initialize surface(s)
-	result = initialize_surfaces(vulkan_renderer, window_handle, module_handle);
+	// Create surface(s)
+	result = create_surfaces(vulkan_renderer, window_handle, module_handle);
 	if (LX_FAILED(result)) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize surface(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
@@ -690,7 +702,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Physical device(s) [OK]");
 
-	// Initialize logical device(s)
+	// Create logical device(s)
 	const char *device_extension_names[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 	const uint32_t num_device_extension_names = sizeof(device_extension_names) / sizeof(char*);
 
@@ -702,7 +714,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
 
-	// Initialize swap chain
+	// Create swap chain
 	result = create_swap_chain(vulkan_renderer);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize swap chain");
@@ -711,7 +723,14 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Swap chain [OK]");
 	 
-	// Initialize image views
+	// Create semaphore(s)
+	if (create_semaphore(vulkan_renderer, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
+		create_semaphore(vulkan_renderer, &vulkan_renderer->semaphore_render_finished) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create semaphore(s)");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+
 	*renderer = (lx_renderer_t*)vulkan_renderer;
 	return LX_SUCCESS;
 }
