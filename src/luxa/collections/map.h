@@ -9,15 +9,17 @@ extern "C" {
 
 typedef struct lx_map lx_map_t;
 
-lx_map_t *lx_map_create(lx_allocator_t *allocator, size_t element_size);
+typedef size_t (*lx_hash_func_t)(const lx_any_t key);
+
+lx_map_t *lx_map_create(lx_allocator_t *allocator, size_t element_size, lx_hash_func_t);
 
 void lx_map_destroy(lx_map_t *map);
 
-void lx_map_insert(lx_map_t *map, uint64_t key, lx_any_t item);
+void lx_map_insert(lx_map_t *map, lx_any_t key, lx_any_t item);
 
-lx_any_t lx_map_get(lx_map_t *map, uint64_t key);
+lx_any_t lx_map_at(const lx_map_t *map, lx_any_t key, lx_any_t default_value);
 
-lx_any_t lx_map_get_or_default(lx_map_t *map, uint64_t key, lx_any_t default_value);
+bool lx_map_try_get_value(const lx_map_t *map, lx_any_t key, lx_any_t *item);
 
 #ifdef __cplusplus
 }

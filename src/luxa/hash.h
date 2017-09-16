@@ -55,7 +55,7 @@ static uint32_t lx_murmur_hash_32(const void *key, size_t size, uint32_t hash)
 /*
  * From https://stackoverflow.com/questions/5611188/how-to-use-murmurhash-64-in-objective-c
  */
-uint64_t lx_murmur_hash_64(const void *key, size_t len, unsigned int seed)
+static uint64_t lx_murmur_hash_64(const void *key, size_t len, unsigned int seed)
 {
 	LX_ASSERT(key, "Invalid key");
 	LX_ASSERT(len, "Invalid key length");
@@ -107,6 +107,12 @@ uint64_t lx_murmur_hash_64(const void *key, size_t len, unsigned int seed)
 	h = (h << 32) | h2;
 
 	return h;
+}
+
+static inline size_t lx_string_hash64(const lx_any_t key)
+{
+	const char *s = (const char*)key;
+	return (size_t)lx_murmur_hash_64(s, strlen(s), 0);
 }
 
 #ifdef __cplusplus

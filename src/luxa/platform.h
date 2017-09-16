@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <string.h>
 
 #ifndef NULL
 #define NULL ((void*)0);
