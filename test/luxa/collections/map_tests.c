@@ -53,11 +53,36 @@ void get_value_succeeds()
 	LX_TRUE(exists);
 }
 
+void rehash_succeeds()
+{
+	// Arrange
+	lx_map_t *map = lx_map_create(lx_allocator_default(), sizeof(int), lx_string_hash64);
+	const uint32_t count = 32;
+
+	// Act
+	char key[128];
+	
+	for (uint32_t i = 1; i < count; ++i) {
+		sprintf_s(key, 128, "entry_%d", i);
+		lx_map_insert(map, key, &i);
+	}
+
+	// Assert
+	for (uint32_t i = 1; i < count; ++i) {
+		sprintf_s(key, 128, "entry_%d", i);
+		uint32_t* value;
+		bool exists = lx_map_try_get_value(map, key, &value);
+		LX_ASSERT(exists, "Key does not exists");
+		LX_ASSERT(*value == i, "Value does not match");
+	}
+}
+
 void setup_map_test_fixture()
 {
 	LX_TEST_FIXTURE_BEGIN("Map");
 		LX_ADD_TEST(create_returns_new_hash_map);
 		LX_ADD_TEST(insert_and_at_returns_correct_values);
 		LX_ADD_TEST(get_value_succeeds);
-	LX_TEST_FIXTURE_END();
+		LX_ADD_TEST(rehash_succeeds);
+		LX_TEST_FIXTURE_END();
 }

@@ -1,5 +1,4 @@
-#ifndef MAP_TEST_H
-#define MAP_TEST_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,5 +9,3 @@ void setup_map_test_fixture();
 #ifdef __cplusplus
 }
 #endif
-
-#endif // MAP_TEST_H

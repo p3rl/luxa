@@ -1,7 +1,7 @@
 #include <luxa/collections/map.h>
 #include <string.h>
 
-#define MAP_DEFAULT_CAPACITY 4
+#define MAP_DEFAULT_CAPACITY 16
 #define MAP_LOAD_FACTOR 0.5
 #define MAP_PROBE_COUNT 8
 
@@ -72,6 +72,7 @@ static void insert(lx_map_t *map, size_t hash, lx_any_t item)
 	map->keys[index] = hash;
 	map->entry_states[index] = 1;
 	memcpy(((char *)map->items) + map->element_size * index, item, map->element_size);
+	map->size++;
 }
 
 static void rehash(lx_map_t *map)
@@ -84,6 +85,7 @@ static void rehash(lx_map_t *map)
 	
 	map->buffer = lx_alloc(map->allocator, bytes * new_capacity);
 	map->capacity = new_capacity;
+	map->size = 0;
 
 	memset(map->buffer, 0, bytes * new_capacity);
 	
@@ -91,7 +93,10 @@ static void rehash(lx_map_t *map)
 	map->entry_states = (uint8_t *)(map->keys + map->capacity);
 	map->items = (lx_any_t *)(map->entry_states + map->capacity);
 
-	for (size_t i = 0; i < old_map.size; ++i) {
+	for (size_t i = 0; i < old_map.capacity; ++i) {
+		if (!old_map.entry_states[i])
+			continue;
+		
 		size_t hash = old_map.keys[i];
 		lx_any_t item = ((char *)old_map.items) + old_map.element_size * i;
 		insert(map, hash, item);
@@ -144,9 +149,23 @@ void lx_map_insert(lx_map_t *map, lx_any_t key, lx_any_t item)
 	double load_factor = ((double)map->size) / ((double)map->capacity);
 	if (load_factor >= MAP_LOAD_FACTOR) {
 		rehash(map);
-	}
+	}	
 	
 	insert(map, map->hash(key), item);
+}
+
+bool lx_map_remove(lx_map_t *map, lx_any_t key)
+{
+	size_t hash = map->hash(key);
+	size_t index = 0;
+
+	if (!find_bucket(map, hash, &index))
+		return false;
+	
+	map->entry_states[index] = 0;
+	map->size--;
+
+	return true;
 }
 
 lx_any_t lx_map_at(const lx_map_t *map, lx_any_t key, lx_any_t default_value)

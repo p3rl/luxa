@@ -17,6 +17,8 @@ void lx_map_destroy(lx_map_t *map);
 
 void lx_map_insert(lx_map_t *map, lx_any_t key, lx_any_t item);
 
+bool lx_map_remove(lx_map_t *map, lx_any_t key);
+
 lx_any_t lx_map_at(const lx_map_t *map, lx_any_t key, lx_any_t default_value);
 
 bool lx_map_try_get_value(const lx_map_t *map, lx_any_t key, lx_any_t *item);
