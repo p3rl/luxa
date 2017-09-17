@@ -70,9 +70,12 @@ static void insert(lx_map_t *map, size_t hash, lx_any_t item)
 	}
 	
 	map->keys[index] = hash;
-	map->entry_states[index] = 1;
 	memcpy(((char *)map->items) + map->element_size * index, item, map->element_size);
-	map->size++;
+	
+	if (!map->entry_states[index]) {
+		map->size++;
+		map->entry_states[index] = 1;
+	}
 }
 
 static void rehash(lx_map_t *map)
