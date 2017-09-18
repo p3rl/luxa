@@ -101,6 +101,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	while (GetMessage(&msg, NULL, 0, 0)) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
+
+		lx_renderer_render_frame(renderer);
 	}
 
 	LX_LOG_INFO(NULL, "Shutting down...");

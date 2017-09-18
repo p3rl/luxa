@@ -66,7 +66,7 @@ static void lx_array_push_back(lx_array_t *array, lx_any_t element)
 	array->size++;
 }
 
-static bool lx_array_is_empty(lx_array_t *array)
+static bool lx_array_is_empty(const lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return array->size == 0;
@@ -84,7 +84,7 @@ static lx_any_t lx_array_end(lx_array_t *array)
 	return (lx_any_t)(array->buffer + (array->size * array->element_size));
 }
 
-static lx_any_t lx_array_at(lx_array_t *array, size_t index)
+static lx_any_t lx_array_at(const lx_array_t *array, size_t index)
 {
 	LX_ASSERT(array, "Invalid array");
 	LX_ASSERT(index < array->size, "Index out of bounds");
@@ -103,7 +103,7 @@ static size_t lx_array_size(lx_array_t *array)
 	return array->size;
 }
 
-static inline bool lx_array_exists(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static inline bool lx_array_exists(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
 
@@ -114,7 +114,7 @@ static inline bool lx_array_exists(lx_array_t *array, lx_binary_predicate_t pred
 	return exists;
 }
 
-static inline lx_range_t lx_array_range(lx_array_t *array)
+static inline lx_range_t lx_array_range(const lx_array_t *array)
 {
 	return (lx_range_t) {
 		.begin = array->buffer,
@@ -123,7 +123,7 @@ static inline lx_range_t lx_array_range(lx_array_t *array)
 	};
 }
 
-static inline lx_any_t lx_array_find(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static inline lx_any_t lx_array_find(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
 

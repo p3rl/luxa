@@ -10,7 +10,7 @@
 typedef struct command_pool {
 	VkCommandPool handle;
 	uint32_t queue_family_index;
-	lx_array_t *command_buffers;
+	lx_array_t *command_buffers;	// VkCommandBuffer
 } command_pool_t;
 
 typedef struct frame_buffer {
@@ -74,6 +74,7 @@ typedef struct vulkan_renderer
 	VkDebugReportCallbackEXT debug_report_extension;
 	VkSemaphore semaphore_image_available;
 	VkSemaphore semaphore_render_finished;
+	bool record_command_buffer;
 } vulkan_renderer_t;
 
 static bool shader_id_equals(shader_t *shader, lx_any_t id)
@@ -550,6 +551,18 @@ static lx_result_t create_render_pass(vulkan_renderer_t *renderer)
 	render_pass_create_info.subpassCount = 1;
 	render_pass_create_info.pSubpasses = &subpass;
 
+	VkSubpassDependency dependency = { 0 };
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.srcAccessMask = 0;
+
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	render_pass_create_info.dependencyCount = 1;
+	render_pass_create_info.pDependencies = &dependency;
+
 	if (vkCreateRenderPass(renderer->device->handle, &render_pass_create_info, NULL, &renderer->render_pass) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create render pass");
 		return LX_ERROR;
@@ -667,6 +680,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	*vulkan_renderer = (vulkan_renderer_t) { 0 };
 	vulkan_renderer->allocator = allocator;
 	vulkan_renderer->shaders = lx_array_create(allocator, sizeof(shader_t));
+	vulkan_renderer->record_command_buffer = true;
 
 	// Initialize Vulkan instance
 	lx_result_t result = create_instance(vulkan_renderer, layer_names, num_layer_names, extension_names, num_extension_names);
@@ -992,4 +1006,97 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 
 	LX_LOG_DEBUG(LOG_TAG, "Render pipeline(s) [OK]");
 	return LX_SUCCESS;
+}
+
+void lx_renderer_render_frame(lx_renderer_t *renderer)
+{
+	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
+
+	if (vr->record_command_buffer) {
+
+		// Record comman buffers
+		for (uint32_t i = 0; i < lx_array_size(vr->command_pool->command_buffers); ++i) {
+			VkCommandBufferBeginInfo buffer_begin_info = { 0 };
+			buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+			buffer_begin_info.pInheritanceInfo = NULL; // Optional
+
+			VkCommandBuffer *cb = lx_array_at(vr->command_pool->command_buffers, i);
+			vkBeginCommandBuffer(*cb, &buffer_begin_info);
+
+			frame_buffer_t *fb = lx_array_at(vr->frame_buffers, i);
+			VkRenderPassBeginInfo render_pass_begin_info = { 0 };
+			render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			render_pass_begin_info.renderPass = vr->render_pass;
+			render_pass_begin_info.framebuffer = fb->handle;
+
+			render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
+			render_pass_begin_info.renderArea.extent = vr->swap_chain->extent;
+
+			VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
+			render_pass_begin_info.clearValueCount = 1;
+			render_pass_begin_info.pClearValues = &clear_color;
+
+			vkCmdBeginRenderPass(*cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vr->pipeline);
+
+			vkCmdDraw(*cb, 3, 1, 0, 0);
+
+			vkCmdEndRenderPass(*cb);
+
+			if (vkEndCommandBuffer(*cb) != VK_SUCCESS) {
+				LX_LOG_ERROR(LOG_TAG, "Failed to record command buffer");
+				return;
+			}
+		}
+
+		vr->record_command_buffer = false;
+	}
+
+	vkQueueWaitIdle(vr->device->presentation_queue);
+	
+	// Acquire image
+	uint32_t image_index;
+	vkAcquireNextImageKHR(vr->device->handle, vr->swap_chain->handle, INTMAX_MAX, vr->semaphore_image_available, VK_NULL_HANDLE, &image_index);
+
+	VkSubmitInfo submit_info = { 0 };
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	VkSemaphore wait_semaphores[] = { vr->semaphore_image_available };
+	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	submit_info.waitSemaphoreCount = 1;
+	submit_info.pWaitSemaphores = wait_semaphores;
+	submit_info.pWaitDstStageMask = wait_stages;
+
+	VkCommandBuffer *cmd_buffer = lx_array_at(vr->command_pool->command_buffers, image_index);
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = cmd_buffer;
+
+	VkSemaphore signals[] = { vr->semaphore_render_finished };
+	submit_info.signalSemaphoreCount = 1;
+	submit_info.pSignalSemaphores = signals;
+
+	VkResult result = vkQueueSubmit(vr->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+	if (result != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to sumbit draw command buffer (Error: %d)", result);
+		return;
+	}
+
+	// Presentation	
+	VkPresentInfoKHR present_info = { 0 };
+	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present_info.waitSemaphoreCount = 1;
+	present_info.pWaitSemaphores = signals;
+
+	VkSwapchainKHR swap_chains[] = { vr->swap_chain->handle };
+	present_info.swapchainCount = 1;
+	present_info.pSwapchains = swap_chains;
+	present_info.pImageIndices = &image_index;
+
+	present_info.pResults = NULL; // Optional
+
+	if (vkQueuePresentKHR(vr->device->presentation_queue, &present_info) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to present image");
+	}
 }
