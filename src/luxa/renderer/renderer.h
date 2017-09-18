@@ -26,6 +26,8 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer);
 
 void lx_renderer_render_frame(lx_renderer_t *renderer);
 
+void lx_renderer_device_wait_idle(lx_renderer_t *renderer);
+
 #ifdef __cplusplus
 }
 #endif

@@ -756,6 +756,10 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
 
+	// Destroy semaphores
+	vkDestroySemaphore(vulkan_renderer->device->handle, vulkan_renderer->semaphore_image_available, NULL);
+	vkDestroySemaphore(vulkan_renderer->device->handle, vulkan_renderer->semaphore_render_finished, NULL);
+	
 	// Destroy command pool
 	destroy_command_pool(vulkan_renderer);
 	
@@ -1014,7 +1018,7 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 
 	if (vr->record_command_buffer) {
 
-		// Record comman buffers
+		// Record command buffers
 		for (uint32_t i = 0; i < lx_array_size(vr->command_pool->command_buffers); ++i) {
 			VkCommandBufferBeginInfo buffer_begin_info = { 0 };
 			buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1099,4 +1103,13 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	if (vkQueuePresentKHR(vr->device->presentation_queue, &present_info) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to present image");
 	}
+}
+
+void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
+{
+	LX_ASSERT(renderer, "Invalid renderer");
+	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
+	
+	LX_ASSERT(vr->device, "Invalid device");
+	vkDeviceWaitIdle(vr->device->handle);
 }

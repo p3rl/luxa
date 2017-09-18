@@ -103,6 +103,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		DispatchMessage(&msg);
 
 		lx_renderer_render_frame(renderer);
+		lx_renderer_device_wait_idle(renderer);
 	}
 
 	LX_LOG_INFO(NULL, "Shutting down...");
