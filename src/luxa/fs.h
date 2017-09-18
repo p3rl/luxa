@@ -1,5 +1,4 @@
-#ifndef FS_H
-#define FS_H
+#pragma once
 
 #include <luxa/collections/string.h>
 #include <luxa/collections/buffer.h>
@@ -15,5 +14,3 @@ lx_result_t lx_fs_read_file(lx_buffer_t *buffer, const char *path);
 #ifdef __cplusplus
 }
 #endif
-
-#endif //FS_H

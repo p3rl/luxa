@@ -32,9 +32,11 @@ LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, L
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			break;
-		case WM_SIZE:
-			//lx_renderer_reset_swap_chain(renderer, 1, 2);
-			break;
+		case WM_SIZE: {
+			lx_extent2_t extent = { LOWORD(lParam), HIWORD(lParam) };
+			lx_renderer_reset_swap_chain(renderer, extent, 1, 2);
+		}
+		break;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 			break;
@@ -70,12 +72,13 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		return 1;
 	}
 
+	lx_extent2_t window_size = { 800, 600 };
 	HWND window_handle = CreateWindow(
 		window_class_name,
 		"Luxa Engine 0.1.0",
 		WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT,
-		800, 600,
+		window_size.width, window_size.height,
 		NULL,
 		NULL,
 		instance_handle,
@@ -87,7 +90,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		return 1;
 	}
 
-	lx_renderer_create(allocator, &renderer, window_handle, instance_handle);
+	lx_renderer_create(allocator, &renderer, window_handle, window_size, instance_handle);
 
 	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
 	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\vert.spv");

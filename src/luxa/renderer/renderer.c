@@ -7,10 +7,16 @@
 
 #define LOG_TAG "Renderer"
 
+typedef struct surface_details {
+	VkSurfaceCapabilitiesKHR capabilities;
+	lx_array_t *formats;
+	lx_array_t *present_modes;
+} surface_details_t;
+
 typedef struct command_pool {
 	VkCommandPool handle;
 	uint32_t queue_family_index;
-	lx_array_t *command_buffers;	// VkCommandBuffer
+	lx_array_t *command_buffers; // VkCommandBuffer
 } command_pool_t;
 
 typedef struct frame_buffer {
@@ -25,8 +31,8 @@ typedef struct shader
 } shader_t;
 
 typedef struct swap_chain {
-	lx_array_t *images;					// VkImage
-	lx_array_t *image_views;			// VkImageView
+	lx_array_t *images; // VkImage
+	lx_array_t *image_views; // VkImageView
 	VkSwapchainKHR handle;
 	VkPresentModeKHR present_mode;
 	VkSurfaceFormatKHR surface_format;
@@ -39,10 +45,7 @@ typedef struct physical_device
 	VkPhysicalDeviceProperties properties;
 	VkPhysicalDeviceFeatures features;
 	VkPhysicalDeviceMemoryProperties memory_properties;
-	VkSurfaceCapabilitiesKHR surface_capabilities;
-	lx_array_t *queue_family_properties;  // VkQueueFamilyProperties
-	lx_array_t *surface_formats;
-	lx_array_t *present_modes;
+	lx_array_t *queue_family_properties; // VkQueueFamilyProperties
 	int graphics_queue_family_index;
 	int compute_queue_family_index;
 	int presentation_queue_family_index;
@@ -59,9 +62,9 @@ typedef struct logical_device
 typedef struct vulkan_renderer
 {
 	lx_allocator_t *allocator;
-	lx_array_t *physical_devices;	// physical_device_t
-	lx_array_t *shaders;			// shader_t
-	lx_array_t *frame_buffers;		// frame_buffer_t
+	lx_array_t *physical_devices; // physical_device_t
+	lx_array_t *shaders; // shader_t
+	lx_array_t *frame_buffers;	// frame_buffer_t
 	physical_device_t* physical_device;
 	logical_device_t* device;
 	swap_chain_t *swap_chain;
@@ -182,45 +185,62 @@ static lx_array_t *get_available_physical_devices(vulkan_renderer_t *renderer)
 			}
 		}
 
-		// Surface capabilities
-		if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device.handle, renderer->presentation_surface, &physical_device.surface_capabilities) != VK_SUCCESS) {
-			LX_LOG_WARNING(LOG_TAG, "Physical device has no surface capabilities");
-		}
-
-		// Surface formats
-		uint32_t num_surface_formats;
-		if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device.handle, renderer->presentation_surface, &num_surface_formats, NULL) != VK_SUCCESS) {
-			LX_LOG_WARNING(LOG_TAG, "Failed to get number of surface format(s)");
-		}
-
-		if (num_surface_formats) {
-			physical_device.surface_formats = lx_array_create_with_size(renderer->allocator, sizeof(VkSurfaceFormatKHR), num_surface_formats);
-
-			if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device.handle, renderer->presentation_surface, &num_surface_formats, lx_array_begin(physical_device.surface_formats)) != VK_SUCCESS) {
-				LX_LOG_WARNING(LOG_TAG, "Failed to get surface format(s)");
-			}
-		}
-
-		// Presentaton modes
-		uint32_t num_presentation_modes;
-		if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, renderer->presentation_surface, &num_presentation_modes, NULL) != VK_SUCCESS) {
-			LX_LOG_WARNING(LOG_TAG, "Failed to get number of presentation modes");
-		}
-
-		if (num_presentation_modes) {
-			physical_device.present_modes = lx_array_create_with_size(renderer->allocator, sizeof(VkPresentModeKHR), num_presentation_modes);
-			
-			if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device.handle, renderer->presentation_surface, &num_presentation_modes, lx_array_begin(physical_device.present_modes)) != VK_SUCCESS) {
-				LX_LOG_WARNING(LOG_TAG, "Failed to get presentation mode(s)");
-			}
-		}
-
 		lx_array_push_back(renderer->physical_devices, &physical_device);
 	}
 
 	lx_free(renderer->allocator, available_physical_devices);
 	
 	return renderer->physical_devices;
+}
+
+static void destroy_surface_details(surface_details_t *details)
+{
+	lx_array_destroy(details->formats);
+	lx_array_destroy(details->present_modes);
+	memset(details, 0, sizeof(surface_details_t));
+}
+
+static lx_result_t get_surface_details(lx_allocator_t *allocator, physical_device_t *physical_device, VkSurfaceKHR surface, surface_details_t *details)
+{
+	memset(details, 0, sizeof(surface_details_t));
+	
+	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device->handle, surface, &details->capabilities) != VK_SUCCESS) {
+		memset(details, 0, sizeof(surface_details_t));
+		return LX_ERROR;
+	}
+
+	uint32_t num_surface_formats;
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device->handle, surface, &num_surface_formats, NULL) != VK_SUCCESS) {
+		return LX_ERROR;
+	}
+
+	if (num_surface_formats) {
+		details->formats = lx_array_create_with_size(allocator, sizeof(VkSurfaceFormatKHR), num_surface_formats);
+		if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device->handle, surface, &num_surface_formats, lx_array_begin(details->formats)) != VK_SUCCESS) {
+			lx_array_destroy(details->formats);
+			memset(details, 0, sizeof(surface_details_t));
+			return LX_ERROR;
+		}
+	}
+
+	uint32_t num_present_modes;
+	if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device->handle, surface, &num_present_modes, NULL) != VK_SUCCESS) {
+		lx_array_destroy(details->formats);
+		memset(details, 0, sizeof(surface_details_t));
+		return LX_ERROR;
+	}
+
+	if (num_present_modes) {
+		details->present_modes = lx_array_create_with_size(allocator, sizeof(VkPresentModeKHR), num_present_modes);
+		if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device->handle, surface, &num_present_modes, lx_array_begin(details->present_modes)) != VK_SUCCESS) {
+			lx_array_destroy(details->formats);
+			lx_array_destroy(details->present_modes);
+			memset(details, 0, sizeof(surface_details_t));
+			return LX_ERROR;
+		}
+	}
+
+	return LX_SUCCESS;
 }
 
 static lx_result_t create_instance(vulkan_renderer_t *renderer,
@@ -406,21 +426,20 @@ static lx_result_t create_logial_devices(
 	return LX_SUCCESS;
 }
 
-static void destroy_swap_chain(vulkan_renderer_t *renderer)
+static void destroy_swap_chain(vulkan_renderer_t *renderer, swap_chain_t *swap_chain)
 {
-	LX_ASSERT(renderer->swap_chain, "Invalid swap chain");
-
-	lx_array_for(VkImageView, iv, renderer->swap_chain->image_views) {
+	lx_array_for(VkImageView, iv, swap_chain->image_views) {
 		vkDestroyImageView(renderer->device->handle, *iv, NULL);
 	}
 
-	lx_array_destroy(renderer->swap_chain->image_views);
-	lx_array_destroy(renderer->swap_chain->images);
-	lx_free(renderer->allocator, renderer->swap_chain);
-	renderer->swap_chain = NULL;
+	vkDestroySwapchainKHR(renderer->device->handle, swap_chain->handle, NULL);
+
+	lx_array_destroy(swap_chain->image_views);
+	lx_array_destroy(swap_chain->images);
+	lx_free(renderer->allocator, swap_chain);
 }
 
-static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR old_swap_chain_handle)
+static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, lx_extent2_t swap_chain_extent, VkSwapchainKHR old_swap_chain_handle)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 	LX_ASSERT(renderer->physical_device, "Invalid physical device(s)");
@@ -429,8 +448,14 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR
 
 	physical_device_t *physical_device = renderer->physical_device;
 	
+	surface_details_t surface_details;
+	if (get_surface_details(renderer->allocator, renderer->physical_device, renderer->presentation_surface, &surface_details) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to get surface details");
+		return LX_ERROR;
+	}
+
 	VkSurfaceFormatKHR surface_format = { 0 };
-	lx_array_for(VkSurfaceFormatKHR, sf, physical_device->surface_formats) {
+	lx_array_for(VkSurfaceFormatKHR, sf, surface_details.formats) {
 		if (sf->format == VK_FORMAT_B8G8R8A8_UNORM && sf->colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
 			surface_format = (VkSurfaceFormatKHR) { .format = VK_FORMAT_B8G8R8A8_UNORM,.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
 		}
@@ -441,7 +466,7 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR
 	}
 	
 	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-	lx_array_for(VkPresentModeKHR, pm, physical_device->present_modes) {
+	lx_array_for(VkPresentModeKHR, pm, surface_details.present_modes) {
 		if (*pm == VK_PRESENT_MODE_MAILBOX_KHR) {
 			present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
 			break;
@@ -452,11 +477,16 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR
 		}
 	}
 
-	VkExtent2D extent = physical_device->surface_capabilities.currentExtent;
+	VkExtent2D extent = surface_details.capabilities.currentExtent;
+	if (extent.width == UINT32_MAX) {
+		extent = (VkExtent2D) { swap_chain_extent.width, swap_chain_extent.height };
+		extent.width = lx_max(surface_details.capabilities.minImageExtent.width, lx_min(surface_details.capabilities.maxImageExtent.width, extent.width));
+		extent.height = lx_max(surface_details.capabilities.minImageExtent.height, lx_min(surface_details.capabilities.maxImageExtent.height, extent.height));
+	}
 
-	uint32_t image_count = physical_device->surface_capabilities.minImageCount + 1;
-	if (physical_device->surface_capabilities.maxImageCount > 0 && image_count > physical_device->surface_capabilities.maxImageCount) {
-		image_count = physical_device->surface_capabilities.maxImageCount;
+	uint32_t image_count = surface_details.capabilities.minImageCount + 1;
+	if (surface_details.capabilities.maxImageCount > 0 && image_count > surface_details.capabilities.maxImageCount) {
+		image_count = surface_details.capabilities.maxImageCount;
 	}
 	
 	VkSwapchainCreateInfoKHR create_info = { 0 };
@@ -481,11 +511,13 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR
 		create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	}
 
-	create_info.preTransform = physical_device->surface_capabilities.currentTransform;
+	create_info.preTransform = surface_details.capabilities.currentTransform;
 	create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	create_info.presentMode = present_mode;
 	create_info.clipped = VK_TRUE;
 	create_info.oldSwapchain = old_swap_chain_handle;
+
+	destroy_surface_details(&surface_details);
 	
 	swap_chain_t *swap_chain = lx_alloc(renderer->allocator, sizeof(swap_chain_t));
 	*swap_chain = (swap_chain_t) { .images = 0, .image_views = 0, .present_mode = present_mode, .surface_format = surface_format, .extent = extent };
@@ -706,7 +738,7 @@ static void destroy_command_pool(vulkan_renderer_t *renderer)
 	*renderer->command_pool = (command_pool_t) { 0 };
 }
 
-lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, void* module_handle)
+lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **renderer, void* window_handle, lx_extent2_t window_size, void* module_handle)
 {
 	LX_ASSERT(allocator, "Invalid allocator");
 	LX_ASSERT(renderer, "Invalid renderer");
@@ -770,7 +802,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
 
 	// Create swap chain
-	result = create_swap_chain(vulkan_renderer, VK_NULL_HANDLE);
+	result = create_swap_chain(vulkan_renderer, window_size, VK_NULL_HANDLE);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize swap chain");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
@@ -1121,7 +1153,7 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	uint32_t image_index;
 	VkResult result = vkAcquireNextImageKHR(vr->device->handle, vr->swap_chain->handle, INTMAX_MAX, vr->semaphore_image_available, VK_NULL_HANDLE, &image_index);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		lx_renderer_reset_swap_chain(renderer, 1, 2);
+		//lx_renderer_reset_swap_chain(renderer, 1, 2);
 		return;
 	}
 	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -1182,12 +1214,12 @@ void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
 	vkDeviceWaitIdle(vr->device->handle);
 }
 
-lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
+lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_chain_extent, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
 
-	lx_renderer_device_wait_idle(renderer);
+	vkQueueWaitIdle(vr->device->presentation_queue);
 
 	LX_LOG_DEBUG(LOG_TAG, "Resetting swap chain");
 
@@ -1203,14 +1235,16 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, uint32_t verte
 	vkDestroyRenderPass(vr->device->handle, vr->render_pass, NULL);
 	vr->render_pass = VK_NULL_HANDLE;
 
-	VkSwapchainKHR old_swap_chain_handle = vr->swap_chain->handle;
-	destroy_swap_chain(vr);
+	swap_chain_t* old_swap_chain = vr->swap_chain;
+	vr->swap_chain = NULL;
 
-	VkResult result = create_swap_chain(vr, old_swap_chain_handle);
+	VkResult result = create_swap_chain(vr, swap_chain_extent, old_swap_chain->handle);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to reset swap chain");
 		return LX_ERROR;
 	}
+
+	destroy_swap_chain(vr, old_swap_chain);
 
 	if (create_render_pass(vr) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to creat render pass");
