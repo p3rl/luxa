@@ -127,7 +127,7 @@ static lx_array_t *get_available_extensions(lx_allocator_t *allocator)
 	return extension_properties;
 }
 
-static lx_array_t *get_physical_devices(vulkan_renderer_t *renderer)
+static lx_array_t *get_available_physical_devices(vulkan_renderer_t *renderer)
 {
 	uint32_t num_devices = 0;
 	vkEnumeratePhysicalDevices(renderer->instance, &num_devices, NULL);
@@ -286,7 +286,7 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 	return LX_SUCCESS;
 }
 
-static lx_result_t initialize_extensions(vulkan_renderer_t *renderer)
+static lx_result_t create_extensions(vulkan_renderer_t *renderer)
 {
 	// Setup debug report extension
 	VkDebugReportCallbackCreateInfoEXT debug_report_create_info = { 0 };
@@ -332,9 +332,9 @@ static lx_result_t create_surfaces(vulkan_renderer_t *renderer, void *window_han
 	return LX_SUCCESS;
 }
 
-static lx_result_t initialize_physical_devices(vulkan_renderer_t *renderer)
+static lx_result_t create_physical_devices(vulkan_renderer_t *renderer)
 {
-	lx_array_t *physical_devices = get_physical_devices(renderer);
+	lx_array_t *physical_devices = get_available_physical_devices(renderer);
 	if (!physical_devices) {
 		LX_LOG_ERROR(LOG_TAG, "No devices found");
 		return LX_ERROR;
@@ -406,10 +406,26 @@ static lx_result_t create_logial_devices(
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_swap_chain(vulkan_renderer_t *renderer)
+static void destroy_swap_chain(vulkan_renderer_t *renderer)
+{
+	LX_ASSERT(renderer->swap_chain, "Invalid swap chain");
+
+	lx_array_for(VkImageView, iv, renderer->swap_chain->image_views) {
+		vkDestroyImageView(renderer->device->handle, *iv, NULL);
+	}
+
+	lx_array_destroy(renderer->swap_chain->image_views);
+	lx_array_destroy(renderer->swap_chain->images);
+	lx_free(renderer->allocator, renderer->swap_chain);
+	renderer->swap_chain = NULL;
+}
+
+static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, VkSwapchainKHR old_swap_chain_handle)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
-	LX_ASSERT(renderer->physical_device, "No physical device(s)");
+	LX_ASSERT(renderer->physical_device, "Invalid physical device(s)");
+	LX_ASSERT(renderer->device, "Invalid logical device");
+	LX_ASSERT(renderer->swap_chain == NULL, "Swap chain already exists");
 
 	physical_device_t *physical_device = renderer->physical_device;
 	
@@ -469,7 +485,7 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer)
 	create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	create_info.presentMode = present_mode;
 	create_info.clipped = VK_TRUE;
-	create_info.oldSwapchain = VK_NULL_HANDLE;
+	create_info.oldSwapchain = old_swap_chain_handle;
 	
 	swap_chain_t *swap_chain = lx_alloc(renderer->allocator, sizeof(swap_chain_t));
 	*swap_chain = (swap_chain_t) { .images = 0, .image_views = 0, .present_mode = present_mode, .surface_format = surface_format, .extent = extent };
@@ -586,6 +602,8 @@ static void destroy_frame_buffers(vulkan_renderer_t *renderer)
 
 static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
 {
+	LX_ASSERT(renderer->render_pass, "Invalid render pass");
+	
 	destroy_frame_buffers(renderer);
 	renderer->frame_buffers = lx_array_create(renderer->allocator, sizeof(frame_buffer_t));
 
@@ -613,18 +631,54 @@ static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
+static void destroy_command_pool_buffers(vulkan_renderer_t *renderer, command_pool_t *command_pool)
+{
+	LX_ASSERT(command_pool, "Invalid command pool");
+
+	if (!command_pool->command_buffers)
+		return;
+	
+	uint32_t num_buffers = (uint32_t)lx_array_size(command_pool->command_buffers);
+	VkCommandBuffer *buffers = lx_array_begin(command_pool->command_buffers);
+
+	vkFreeCommandBuffers(renderer->device->handle, command_pool->handle, num_buffers, buffers);
+	lx_array_destroy(command_pool->command_buffers);
+	command_pool->command_buffers = NULL;
+}
+
+static lx_result_t create_command_pool_buffers(vulkan_renderer_t *renderer, command_pool_t *command_pool, size_t num_buffers)
+{
+	LX_ASSERT(renderer->command_pool->command_buffers == NULL, "Command pool buffers already exists");
+	
+	VkCommandBufferAllocateInfo cmd_buffer_alloc_info = { 0 };
+	cmd_buffer_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmd_buffer_alloc_info.commandPool = command_pool->handle;
+	cmd_buffer_alloc_info.commandBufferCount = (uint32_t)num_buffers;
+	cmd_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	lx_array_t *command_buffers = lx_array_create_with_size(renderer->allocator, sizeof(VkCommandBuffer), num_buffers);
+	
+	if (vkAllocateCommandBuffers(renderer->device->handle, &cmd_buffer_alloc_info, lx_array_begin(command_buffers)) != VK_SUCCESS) {
+		lx_array_destroy(command_buffers);
+		return LX_ERROR;
+	}
+
+	renderer->command_pool->command_buffers = command_buffers;
+
+	return LX_SUCCESS;
+}
+
 static lx_result_t create_command_pool(vulkan_renderer_t *renderer, uint32_t queue_family_index)
 {
-	const uint32_t num_frame_buffers = (uint32_t)lx_array_size(renderer->frame_buffers);
-	command_pool_t *command_pool = lx_alloc(renderer->allocator, sizeof(command_pool_t));
-
 	LX_ASSERT(renderer->command_pool == NULL, "Command pool already exists");
+
+	command_pool_t *command_pool = lx_alloc(renderer->allocator, sizeof(command_pool_t));
 	
 	*command_pool = (command_pool_t)
 	{ 
 		.handle = 0,
 		.queue_family_index = queue_family_index,
-		.command_buffers = lx_array_create_with_size(renderer->allocator, sizeof(VkCommandBuffer), num_frame_buffers)
+		.command_buffers = 0
 	};
 
 	VkCommandPoolCreateInfo create_info = { 0 };
@@ -633,19 +687,6 @@ static lx_result_t create_command_pool(vulkan_renderer_t *renderer, uint32_t que
 	create_info.flags = 0;
 
 	if (vkCreateCommandPool(renderer->device->handle, &create_info, NULL, &command_pool->handle) != VK_SUCCESS) {
-		lx_array_destroy(command_pool->command_buffers);
-		lx_free(renderer->allocator, command_pool);
-		return LX_ERROR;
-	}
-
-	VkCommandBufferAllocateInfo cmd_buffer_alloc_info = { 0 };
-	cmd_buffer_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmd_buffer_alloc_info.commandPool = command_pool->handle;
-	cmd_buffer_alloc_info.commandBufferCount = num_frame_buffers;
-	cmd_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
-	if (vkAllocateCommandBuffers(renderer->device->handle, &cmd_buffer_alloc_info, lx_array_begin(command_pool->command_buffers)) != VK_SUCCESS) {
-		lx_array_destroy(command_pool->command_buffers);
 		lx_free(renderer->allocator, command_pool);
 		return LX_ERROR;
 	}
@@ -691,7 +732,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Vulkan instance [OK]");
 
 	// Initialize extension(s)
-	result = initialize_extensions(vulkan_renderer);
+	result = create_extensions(vulkan_renderer);
 	if (result != LX_SUCCESS) {
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
@@ -708,7 +749,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Surface(s) [OK]");
 
 	// Initialize physical device(s)
-	result = initialize_physical_devices(vulkan_renderer);
+	result = create_physical_devices(vulkan_renderer);
 	if (LX_FAILED(result)) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize physical device(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
@@ -729,13 +770,41 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
 
 	// Create swap chain
-	result = create_swap_chain(vulkan_renderer);
+	result = create_swap_chain(vulkan_renderer, VK_NULL_HANDLE);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to initialize swap chain");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return result;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Swap chain [OK]");
+
+	if (create_render_pass(vulkan_renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to creat render pass");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Render pass [OK]");
+	
+	if (create_frame_buffers(vulkan_renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed create to frame buffers");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
+
+	if (create_command_pool(vulkan_renderer, vulkan_renderer->physical_device->graphics_queue_family_index) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Command pool [OK]");
+
+	if (create_command_pool_buffers(vulkan_renderer, vulkan_renderer->command_pool, lx_array_size(vulkan_renderer->frame_buffers)) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool buffers");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
 	 
 	// Create semaphore(s)
 	if (create_semaphore(vulkan_renderer, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
@@ -996,18 +1065,6 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 		return LX_ERROR;
 	}
 
-	if (create_frame_buffers(vulkan_renderer) != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
-		return LX_ERROR;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
-
-	if (create_command_pool(vulkan_renderer, vulkan_renderer->physical_device->graphics_queue_family_index) != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool");
-		return LX_ERROR;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Command pool [OK]");
-
 	LX_LOG_DEBUG(LOG_TAG, "Render pipeline(s) [OK]");
 	return LX_SUCCESS;
 }
@@ -1062,7 +1119,16 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	
 	// Acquire image
 	uint32_t image_index;
-	vkAcquireNextImageKHR(vr->device->handle, vr->swap_chain->handle, INTMAX_MAX, vr->semaphore_image_available, VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(vr->device->handle, vr->swap_chain->handle, INTMAX_MAX, vr->semaphore_image_available, VK_NULL_HANDLE, &image_index);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		lx_renderer_reset_swap_chain(renderer, 1, 2);
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to acquire swap chain image!");
+		return;
+	}
+
 
 	VkSubmitInfo submit_info = { 0 };
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1081,7 +1147,7 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signals;
 
-	VkResult result = vkQueueSubmit(vr->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+	result = vkQueueSubmit(vr->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to sumbit draw command buffer (Error: %d)", result);
 		return;
@@ -1103,6 +1169,8 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	if (vkQueuePresentKHR(vr->device->presentation_queue, &present_info) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to present image");
 	}
+
+	vkQueueWaitIdle(vr->device->presentation_queue);
 }
 
 void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
@@ -1112,4 +1180,56 @@ void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
 	
 	LX_ASSERT(vr->device, "Invalid device");
 	vkDeviceWaitIdle(vr->device->handle);
+}
+
+lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
+{
+	LX_ASSERT(renderer, "Invalid renderer");
+	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
+
+	lx_renderer_device_wait_idle(renderer);
+
+	LX_LOG_DEBUG(LOG_TAG, "Resetting swap chain");
+
+	destroy_frame_buffers(vr);
+	destroy_command_pool_buffers(vr, vr->command_pool);
+
+	vkDestroyPipeline(vr->device->handle, vr->pipeline, NULL);
+	vr->pipeline = VK_NULL_HANDLE;
+	
+	vkDestroyPipelineLayout(vr->device->handle, vr->pipeline_layout, NULL);
+	vr->pipeline_layout = VK_NULL_HANDLE;
+	
+	vkDestroyRenderPass(vr->device->handle, vr->render_pass, NULL);
+	vr->render_pass = VK_NULL_HANDLE;
+
+	VkSwapchainKHR old_swap_chain_handle = vr->swap_chain->handle;
+	destroy_swap_chain(vr);
+
+	VkResult result = create_swap_chain(vr, old_swap_chain_handle);
+	if (result != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to reset swap chain");
+		return LX_ERROR;
+	}
+
+	if (create_render_pass(vr) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to creat render pass");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Render pass [OK]");
+
+	if (create_frame_buffers(vr) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
+
+	if (create_command_pool_buffers(vr, vr->command_pool, lx_array_size(vr->frame_buffers)) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool buffers");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
+
+	vr->record_command_buffer = true;
+	return lx_renderer_create_render_pipelines(renderer, vertex_shader_id, fragment_shader_id);
 }

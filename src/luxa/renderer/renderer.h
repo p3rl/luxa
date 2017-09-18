@@ -28,6 +28,8 @@ void lx_renderer_render_frame(lx_renderer_t *renderer);
 
 void lx_renderer_device_wait_idle(lx_renderer_t *renderer);
 
+lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id);
+
 #ifdef __cplusplus
 }
 #endif

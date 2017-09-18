@@ -8,6 +8,8 @@
 #include <luxa/log.h>
 #include <luxa/fs.h>
 
+lx_renderer_t *renderer = NULL;
+
 void log(time_t time, lx_log_level_t log_level, const char* tag, const char *message, void *user_data)
 {
 	struct tm tm_info;
@@ -29,6 +31,9 @@ LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, L
 			break;
 		case WM_DESTROY:
 			PostQuitMessage(0);
+			break;
+		case WM_SIZE:
+			//lx_renderer_reset_swap_chain(renderer, 1, 2);
 			break;
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
@@ -82,7 +87,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		return 1;
 	}
 
-	lx_renderer_t *renderer;
 	lx_renderer_create(allocator, &renderer, window_handle, instance_handle);
 
 	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
