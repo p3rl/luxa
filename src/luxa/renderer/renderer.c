@@ -1,8 +1,7 @@
 #include <luxa/renderer/renderer.h>
+#include <luxa/renderer/gpu.h>
 #include <luxa/collections/array.h>
 #include <luxa/log.h>
-#define VK_USE_PLATFORM_WIN32_KHR
-#include <vulkan/vulkan.h>
 #include <string.h>
 
 #define LOG_TAG "Renderer"
@@ -23,13 +22,6 @@ typedef struct frame_buffer {
 	VkFramebuffer handle;
 } frame_buffer_t;
 
-typedef struct shader
-{
-	VkShaderModule handle;
-	uint32_t id;
-	lx_shader_type_t type;
-} shader_t;
-
 typedef struct swap_chain {
 	lx_array_t *images; // VkImage
 	lx_array_t *image_views; // VkImageView
@@ -39,34 +31,12 @@ typedef struct swap_chain {
 	VkExtent2D extent;
 } swap_chain_t;
 
-typedef struct physical_device
-{
-	VkPhysicalDevice handle;
-	VkPhysicalDeviceProperties properties;
-	VkPhysicalDeviceFeatures features;
-	VkPhysicalDeviceMemoryProperties memory_properties;
-	lx_array_t *queue_family_properties; // VkQueueFamilyProperties
-	int graphics_queue_family_index;
-	int compute_queue_family_index;
-	int presentation_queue_family_index;
-} physical_device_t;
-
-typedef struct logical_device
-{
-	VkDevice handle;
-	VkQueue graphics_queue;
-	VkQueue compute_queue;
-	VkQueue presentation_queue;
-} logical_device_t;
-
 typedef struct vulkan_renderer
 {
 	lx_allocator_t *allocator;
-	lx_array_t *physical_devices; // physical_device_t
-	lx_array_t *shaders; // shader_t
+    lx_array_t *gpus; //lx_gpu_t
+    lx_gpu_device_t *device;
 	lx_array_t *frame_buffers;	// frame_buffer_t
-	physical_device_t* physical_device;
-	logical_device_t* device;
 	swap_chain_t *swap_chain;
 	command_pool_t *command_pool;
 	VkInstance instance;
@@ -80,11 +50,6 @@ typedef struct vulkan_renderer
 	bool record_command_buffer;
 } vulkan_renderer_t;
 
-static bool shader_id_equals(shader_t *shader, lx_any_t id)
-{
-	return shader->id == *(uint32_t*)id;
-}
-
 VkBool32 debug_report_callback(
 	VkDebugReportFlagsEXT flags,
 	VkDebugReportObjectTypeEXT object_type,
@@ -97,16 +62,6 @@ VkBool32 debug_report_callback(
 {
 	LX_LOG_WARNING(LOG_TAG, "%s (%s, %d)", message, layer_prefix, message_code);
 	return true;
-}
-
-static lx_result_t create_semaphore(vulkan_renderer_t *renderer, VkSemaphore *semaphore)
-{
-	VkSemaphoreCreateInfo create_info = { 0 };
-	create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	if (vkCreateSemaphore(renderer->device->handle, &create_info, NULL, semaphore) != VK_SUCCESS)
-		return LX_ERROR;
-
-	return LX_SUCCESS;
 }
 
 static lx_array_t *get_available_validation_layers(lx_allocator_t *allocator)
@@ -130,69 +85,6 @@ static lx_array_t *get_available_extensions(lx_allocator_t *allocator)
 	return extension_properties;
 }
 
-static lx_array_t *get_available_physical_devices(vulkan_renderer_t *renderer)
-{
-	uint32_t num_devices = 0;
-	vkEnumeratePhysicalDevices(renderer->instance, &num_devices, NULL);
-	if (!num_devices)
-		return NULL;
-
-	VkPhysicalDevice *available_physical_devices = lx_alloc(renderer->allocator, sizeof(VkPhysicalDevice) * num_devices);
-	vkEnumeratePhysicalDevices(renderer->instance, &num_devices, available_physical_devices);
-
-	renderer->physical_devices = lx_array_create(renderer->allocator, sizeof(physical_device_t));
-
-	for (uint32_t i = 0; i < num_devices; ++i) {
-		physical_device_t physical_device = { 0 };
-		physical_device.graphics_queue_family_index = -1;
-		physical_device.compute_queue_family_index = -1;
-		physical_device.presentation_queue_family_index = -1;
-
-		physical_device.handle = available_physical_devices[i];
-
-		// Device properties
-		vkGetPhysicalDeviceProperties(physical_device.handle, &physical_device.properties);
-
-		// Features
-		vkGetPhysicalDeviceFeatures(physical_device.handle, &physical_device.features);
-
-		// Memory properties
-		vkGetPhysicalDeviceMemoryProperties(physical_device.handle, &physical_device.memory_properties);
-
-		// Queue family properties
-		uint32_t num_queue_family_properties = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(physical_device.handle, &num_queue_family_properties, NULL);
-
-		if (num_queue_family_properties) {
-			physical_device.queue_family_properties = lx_array_create_with_size(renderer->allocator, sizeof(VkQueueFamilyProperties), num_queue_family_properties);
-			vkGetPhysicalDeviceQueueFamilyProperties(physical_device.handle, &num_queue_family_properties, lx_array_begin(physical_device.queue_family_properties));
-
-			// Setup queue family indices
-			for (uint32_t j = 0; j < lx_array_size(physical_device.queue_family_properties); ++j) {
-				VkQueueFamilyProperties *queue_properties = lx_array_at(physical_device.queue_family_properties, j);
-				if (queue_properties->queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-					physical_device.graphics_queue_family_index = j;
-				}
-				else if (queue_properties->queueFlags & VK_QUEUE_COMPUTE_BIT) {
-					physical_device.compute_queue_family_index = j;
-				}
-
-				VkBool32 present_support = false;
-				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device.handle, j, renderer->presentation_surface, &present_support);
-				if (present_support) {
-					physical_device.presentation_queue_family_index = j;
-				}
-			}
-		}
-
-		lx_array_push_back(renderer->physical_devices, &physical_device);
-	}
-
-	lx_free(renderer->allocator, available_physical_devices);
-	
-	return renderer->physical_devices;
-}
-
 static void destroy_surface_details(surface_details_t *details)
 {
 	lx_array_destroy(details->formats);
@@ -200,23 +92,23 @@ static void destroy_surface_details(surface_details_t *details)
 	memset(details, 0, sizeof(surface_details_t));
 }
 
-static lx_result_t get_surface_details(lx_allocator_t *allocator, physical_device_t *physical_device, VkSurfaceKHR surface, surface_details_t *details)
+static lx_result_t get_surface_details(lx_allocator_t *allocator, lx_gpu_t *gpu, VkSurfaceKHR surface, surface_details_t *details)
 {
 	memset(details, 0, sizeof(surface_details_t));
 	
-	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device->handle, surface, &details->capabilities) != VK_SUCCESS) {
+	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu->handle, surface, &details->capabilities) != VK_SUCCESS) {
 		memset(details, 0, sizeof(surface_details_t));
 		return LX_ERROR;
 	}
 
 	uint32_t num_surface_formats;
-	if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device->handle, surface, &num_surface_formats, NULL) != VK_SUCCESS) {
+	if (vkGetPhysicalDeviceSurfaceFormatsKHR(gpu->handle, surface, &num_surface_formats, NULL) != VK_SUCCESS) {
 		return LX_ERROR;
 	}
 
 	if (num_surface_formats) {
 		details->formats = lx_array_create_with_size(allocator, sizeof(VkSurfaceFormatKHR), num_surface_formats);
-		if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device->handle, surface, &num_surface_formats, lx_array_begin(details->formats)) != VK_SUCCESS) {
+		if (vkGetPhysicalDeviceSurfaceFormatsKHR(gpu->handle, surface, &num_surface_formats, lx_array_begin(details->formats)) != VK_SUCCESS) {
 			lx_array_destroy(details->formats);
 			memset(details, 0, sizeof(surface_details_t));
 			return LX_ERROR;
@@ -224,7 +116,7 @@ static lx_result_t get_surface_details(lx_allocator_t *allocator, physical_devic
 	}
 
 	uint32_t num_present_modes;
-	if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device->handle, surface, &num_present_modes, NULL) != VK_SUCCESS) {
+	if (vkGetPhysicalDeviceSurfacePresentModesKHR(gpu->handle, surface, &num_present_modes, NULL) != VK_SUCCESS) {
 		lx_array_destroy(details->formats);
 		memset(details, 0, sizeof(surface_details_t));
 		return LX_ERROR;
@@ -232,7 +124,7 @@ static lx_result_t get_surface_details(lx_allocator_t *allocator, physical_devic
 
 	if (num_present_modes) {
 		details->present_modes = lx_array_create_with_size(allocator, sizeof(VkPresentModeKHR), num_present_modes);
-		if (vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device->handle, surface, &num_present_modes, lx_array_begin(details->present_modes)) != VK_SUCCESS) {
+		if (vkGetPhysicalDeviceSurfacePresentModesKHR(gpu->handle, surface, &num_present_modes, lx_array_begin(details->present_modes)) != VK_SUCCESS) {
 			lx_array_destroy(details->formats);
 			lx_array_destroy(details->present_modes);
 			memset(details, 0, sizeof(surface_details_t));
@@ -352,80 +244,6 @@ static lx_result_t create_surfaces(vulkan_renderer_t *renderer, void *window_han
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_physical_devices(vulkan_renderer_t *renderer)
-{
-	lx_array_t *physical_devices = get_available_physical_devices(renderer);
-	if (!physical_devices) {
-		LX_LOG_ERROR(LOG_TAG, "No devices found");
-		return LX_ERROR;
-	}
-
-	// Log physical devices
-	lx_array_for(physical_device_t, p, physical_devices) {
-		LX_LOG_DEBUG(LOG_TAG, "Found device, name=%s", p->properties.deviceName);
-	}
-
-	renderer->physical_device = lx_array_begin(renderer->physical_devices);
-	LX_LOG_DEBUG(LOG_TAG, "Using %s as main physical device", renderer->physical_device->properties.deviceName);
-	
-	return LX_SUCCESS;
-}
-
-static lx_result_t create_logial_devices(
-	vulkan_renderer_t *renderer,
-	const char *extension_names[],
-	size_t num_extension_names,
-	const char *layer_names[],
-	size_t num_layer_names)
-{
-	LX_ASSERT(renderer, "Invalid renderer");
-	LX_ASSERT(renderer->physical_device, "No physical device(s)");
-
-	// TODO: Find the best GPU
-	physical_device_t *physical_device = renderer->physical_device;
-	
-	VkPhysicalDeviceFeatures device_features = { 0 };
-
-	float queue_priority = 1.0f;
-	
-	VkDeviceQueueCreateInfo queue_create_infos[2];
-	memset(queue_create_infos, 0, sizeof(VkDeviceQueueCreateInfo) * 2);
-	
-	queue_create_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	queue_create_infos[0].queueFamilyIndex = physical_device->graphics_queue_family_index;
-	queue_create_infos[0].queueCount = 1;
-	queue_create_infos[0].pQueuePriorities = &queue_priority;
-	
-	queue_create_infos[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	queue_create_infos[1].queueFamilyIndex = physical_device->presentation_queue_family_index;
-	queue_create_infos[1].queueCount = 1;
-	queue_create_infos[1].pQueuePriorities = &queue_priority;
-
-	VkDeviceCreateInfo create_info = { 0 };
-	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	create_info.pQueueCreateInfos = queue_create_infos;
-	create_info.queueCreateInfoCount = physical_device->presentation_queue_family_index != physical_device->graphics_queue_family_index ? 2 : 1;
-	create_info.ppEnabledLayerNames = layer_names;
-	create_info.enabledLayerCount = (uint32_t)num_layer_names;
-	create_info.ppEnabledExtensionNames = extension_names;
-	create_info.enabledExtensionCount = (uint32_t)num_extension_names;
-	
-	VkDevice device;
-	VkResult result = vkCreateDevice(physical_device->handle, &create_info, NULL, &device);
-	if (result != VK_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to create logical device (Code: %d)", result);
-		return LX_ERROR;
-	}
-
-	renderer->device = lx_alloc(renderer->allocator, sizeof(logical_device_t));
-	renderer->device->handle = device;
-
-	vkGetDeviceQueue(device, physical_device->graphics_queue_family_index, 0, &renderer->device->graphics_queue);
-	vkGetDeviceQueue(device, physical_device->presentation_queue_family_index, 0, &renderer->device->presentation_queue);
-	
-	return LX_SUCCESS;
-}
-
 static void destroy_swap_chain(vulkan_renderer_t *renderer, swap_chain_t *swap_chain)
 {
 	lx_array_for(VkImageView, iv, swap_chain->image_views) {
@@ -442,14 +260,13 @@ static void destroy_swap_chain(vulkan_renderer_t *renderer, swap_chain_t *swap_c
 static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, lx_extent2_t swap_chain_extent, VkSwapchainKHR old_swap_chain_handle)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
-	LX_ASSERT(renderer->physical_device, "Invalid physical device(s)");
 	LX_ASSERT(renderer->device, "Invalid logical device");
 	LX_ASSERT(renderer->swap_chain == NULL, "Swap chain already exists");
 
-	physical_device_t *physical_device = renderer->physical_device;
-	
+    lx_gpu_t *gpu = renderer->device->gpu;
+
 	surface_details_t surface_details;
-	if (get_surface_details(renderer->allocator, renderer->physical_device, renderer->presentation_surface, &surface_details) != LX_SUCCESS) {
+	if (get_surface_details(renderer->allocator, gpu, renderer->presentation_surface, &surface_details) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to get surface details");
 		return LX_ERROR;
 	}
@@ -500,9 +317,9 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, lx_extent2_t s
 	create_info.imageArrayLayers = 1;
 	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-	uint32_t queue_family_indicies[] = { (uint32_t)physical_device->graphics_queue_family_index, (uint32_t)physical_device->presentation_queue_family_index };
+	uint32_t queue_family_indicies[] = { (uint32_t)gpu->graphics_queue_family_index, (uint32_t)gpu->presentation_queue_family_index };
 
-	if (physical_device->graphics_queue_family_index != physical_device->presentation_queue_family_index) {
+	if (gpu->graphics_queue_family_index != gpu->presentation_queue_family_index) {
 		create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 		create_info.queueFamilyIndexCount = 2;
 		create_info.pQueueFamilyIndices = queue_family_indicies;
@@ -752,7 +569,6 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	vulkan_renderer_t *vulkan_renderer = lx_alloc(allocator, sizeof(vulkan_renderer_t));
 	*vulkan_renderer = (vulkan_renderer_t) { 0 };
 	vulkan_renderer->allocator = allocator;
-	vulkan_renderer->shaders = lx_array_create(allocator, sizeof(shader_t));
 	vulkan_renderer->record_command_buffer = true;
 
 	// Initialize Vulkan instance
@@ -780,26 +596,26 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Surface(s) [OK]");
 
-	// Initialize physical device(s)
-	result = create_physical_devices(vulkan_renderer);
-	if (LX_FAILED(result)) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to initialize physical device(s)");
-		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
-		return result;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Physical device(s) [OK]");
+	// Initialize gpu(s)
+    if (lx_gpu_all_available(vulkan_renderer->allocator, vulkan_renderer->instance, vulkan_renderer->presentation_surface, &vulkan_renderer->gpus) != LX_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "No gpu(s) found");
+        lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+        return LX_ERROR;
+    }
 
-	// Create logical device(s)
+	// Create gpu device(s)
 	const char *device_extension_names[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 	const uint32_t num_device_extension_names = sizeof(device_extension_names) / sizeof(char*);
-
-	result = create_logial_devices(vulkan_renderer, device_extension_names, num_device_extension_names, layer_names, num_layer_names);
-	if (result != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to initialize logical device(s)");
-		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
-		return result;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Logical device(s) [OK]");
+    
+    lx_gpu_t *gpu = lx_array_at(vulkan_renderer->gpus, 0);
+    LX_LOG_DEBUG(LOG_TAG, "Using %s as main gpu", gpu->properties.deviceName);
+    
+    if (lx_gpu_create_device(gpu, device_extension_names, num_device_extension_names, layer_names, num_layer_names, &vulkan_renderer->device) != LX_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to create gpu device");
+        lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+        return LX_ERROR;
+    }
+	LX_LOG_DEBUG(LOG_TAG, "Graphics device(s) [OK]");
 
 	// Create swap chain
 	result = create_swap_chain(vulkan_renderer, window_size, VK_NULL_HANDLE);
@@ -824,7 +640,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 
-	if (create_command_pool(vulkan_renderer, vulkan_renderer->physical_device->graphics_queue_family_index) != LX_SUCCESS) {
+	if (create_command_pool(vulkan_renderer, vulkan_renderer->device->gpu->graphics_queue_family_index) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return LX_ERROR;
@@ -839,8 +655,8 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
 	 
 	// Create semaphore(s)
-	if (create_semaphore(vulkan_renderer, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
-		create_semaphore(vulkan_renderer, &vulkan_renderer->semaphore_render_finished) != LX_SUCCESS) {
+	if (lx_gpu_create_semaphore(vulkan_renderer->device, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
+        lx_gpu_create_semaphore(vulkan_renderer->device, &vulkan_renderer->semaphore_render_finished) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create semaphore(s)");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return LX_ERROR;
@@ -858,8 +674,8 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
 
 	// Destroy semaphores
-	vkDestroySemaphore(vulkan_renderer->device->handle, vulkan_renderer->semaphore_image_available, NULL);
-	vkDestroySemaphore(vulkan_renderer->device->handle, vulkan_renderer->semaphore_render_finished, NULL);
+	lx_gpu_destroy_semaphore(vulkan_renderer->device, vulkan_renderer->semaphore_image_available);
+    lx_gpu_destroy_semaphore(vulkan_renderer->device, vulkan_renderer->semaphore_render_finished);
 	
 	// Destroy command pool
 	destroy_command_pool(vulkan_renderer);
@@ -876,15 +692,6 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	// Destroy render passe(s)
 	if (vulkan_renderer->render_pass) {
 		vkDestroyRenderPass(vulkan_renderer->device->handle, vulkan_renderer->render_pass, NULL);
-	}
-	
-	// Destroy shaders
-	if (vulkan_renderer->shaders) {
-		lx_array_for(shader_t, shader, vulkan_renderer->shaders) {
-			vkDestroyShaderModule(vulkan_renderer->device->handle, shader->handle, NULL);
-		}
-		lx_array_destroy(vulkan_renderer->shaders);
-		vulkan_renderer->shaders = NULL;
 	}
 	
 	// Destroy swap chain
@@ -906,20 +713,18 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 		vulkan_renderer->swap_chain = NULL;
 	}
 	
-	// Destroy logical devices
+	// Destroy gpu devices
 	if (vulkan_renderer->device) {
-		vkDestroyDevice(vulkan_renderer->device->handle, NULL);
-		lx_free(vulkan_renderer->allocator, vulkan_renderer->device);
+        lx_gpu_destroy_device(vulkan_renderer->device);
 		vulkan_renderer->device = NULL;
 	}
 	
-	// Destroy physical devices
-	if (vulkan_renderer->physical_devices) {
-		lx_array_for(physical_device_t, physical_device, vulkan_renderer->physical_devices) {
-			lx_array_destroy(physical_device->queue_family_properties);
-		}
-		lx_array_destroy(vulkan_renderer->physical_devices);
-		vulkan_renderer->physical_devices = NULL;
+	// Destroy gpu(s)
+	if (vulkan_renderer->gpus) {
+        lx_array_for(lx_gpu_t, gpu, vulkan_renderer->gpus) {
+            lx_gpu_destroy(gpu);
+        }
+		vulkan_renderer->gpus = NULL;
 	}
 
 	// Destroy surface(s)
@@ -943,31 +748,12 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	lx_free(allocator, vulkan_renderer);
 }
 
-lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id, lx_shader_type_t type)
+lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id)
 {
 	LX_ASSERT(code && code->size > 0, "Invalid shader byte code");
 
-	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t *)renderer;
-
-	LX_ASSERT(!lx_array_exists(vulkan_renderer->shaders, shader_id_equals, &id), "Shader already exists");
-	
-	shader_t shader = { .handle = 0, .id = id, .type = type };
-	
-	VkShaderModuleCreateInfo create_info = { 0 };
-	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	create_info.pCode = (uint32_t *)lx_buffer_data(code);
-	create_info.codeSize = lx_buffer_size(code);
-	
-	VkResult result = vkCreateShaderModule(vulkan_renderer->device->handle, &create_info, NULL, &shader.handle);
-	if (result != VK_SUCCESS) {
-		LX_LOG_WARNING(LOG_TAG, "Failed to create shader, id=%d", id);
-		return LX_ERROR;
-	}
-
-	lx_array_push_back(vulkan_renderer->shaders, &shader);
-	LX_LOG_DEBUG(LOG_TAG, "Created shader, id=%d", id);
-
-	return LX_SUCCESS;
+	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
+    return lx_gpu_create_shader(vr->device, lx_buffer_data(code), lx_buffer_size(code), id);
 }
 
 lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
@@ -976,13 +762,13 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 
 	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t *)renderer;
 
-	shader_t *vertex_shader = lx_array_find(vulkan_renderer->shaders, shader_id_equals, &vertex_shader_id);
+    lx_shader_t *vertex_shader = lx_gpu_get_shader(vulkan_renderer->device, vertex_shader_id);
 	if (!vertex_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Vertex shader missing, id=%d", vertex_shader_id);
 		return LX_ERROR;
 	}
 
-	shader_t *fragment_shader = lx_array_find(vulkan_renderer->shaders, shader_id_equals, &fragment_shader_id);
+    lx_shader_t *fragment_shader = lx_gpu_get_shader(vulkan_renderer->device, fragment_shader_id);
 	if (!fragment_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Fragment shader missing, id=%d", fragment_shader_id);
 		return LX_ERROR;
@@ -1070,12 +856,6 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe layout");
 		return LX_ERROR;
 	}
-
-	if (create_render_pass(vulkan_renderer) != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to create render pass(es)");
-		return LX_ERROR;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Render pass(es) [OK]");
 
 	VkGraphicsPipelineCreateInfo pipeline_create_info = { 0 };
 	pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;

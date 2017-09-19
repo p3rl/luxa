@@ -1,5 +1,4 @@
-#ifndef HASH_MAP_H
-#define HASH_MAP_H
+#pragma once
 
 #include <luxa/memory/allocator.h>
 
@@ -26,5 +25,3 @@ bool lx_map_try_get_value(const lx_map_t *map, lx_any_t key, lx_any_t *item);
 #ifdef __cplusplus
 }
 #endif
-
-#endif // HASH_MAP_H
