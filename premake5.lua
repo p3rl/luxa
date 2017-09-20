@@ -7,6 +7,8 @@ project "application"
     kind "WindowedApp"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
+    warnings "Extra"
+    disablewarnings { "4204", "4100", "4152" }
 
     includedirs { "src" }
 
@@ -30,6 +32,8 @@ project "luxa"
     kind "StaticLib"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
+    warnings "Extra"
+    disablewarnings { "4204", "4100", "4152" }
 
     includedirs { "src", "C://VulkanSDK//1.0.57.0//Include" }
     libdirs "C://VulkanSDK//1.0.57.0//Lib"

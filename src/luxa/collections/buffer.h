@@ -63,7 +63,7 @@ static inline void lx_buffer_copy_data(lx_buffer_t *dst, const char *src, size_t
 	}
 
 	dst->size = size;
-	memcpy(dst->data, dst, size);
+	memcpy(dst->data, src, size);
 }
 
 static inline void lx_buffer_copy(lx_buffer_t *dst, const lx_buffer_t *src)
