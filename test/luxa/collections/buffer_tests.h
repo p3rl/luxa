@@ -1,5 +1,4 @@
-#ifndef BUFFER_H
-#define BUFFER_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,5 +9,3 @@ void setup_buffer_tests();
 #ifdef __cplusplus
 }
 #endif
-
-#endif //BUFFER_H

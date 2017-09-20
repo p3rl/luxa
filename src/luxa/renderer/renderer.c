@@ -6,6 +6,14 @@
 
 #define LOG_TAG "Renderer"
 
+typedef struct render_pipeline {
+    VkRenderPass render_pass;
+    lx_array_t vertex_shader_ids; //uint32_t;
+    lx_array_t fragment_shader_ids; //uint32_t;
+    VkViewport viewport;
+    VkPipeline handle;
+} render_pipeline_t;
+
 typedef struct surface_details {
 	VkSurfaceCapabilitiesKHR capabilities;
 	lx_array_t *formats;
@@ -31,7 +39,7 @@ typedef struct swap_chain {
 	VkExtent2D extent;
 } swap_chain_t;
 
-typedef struct vulkan_renderer
+struct lx_renderer
 {
 	lx_allocator_t *allocator;
     lx_array_t *gpus; //lx_gpu_t
@@ -48,7 +56,7 @@ typedef struct vulkan_renderer
 	VkSemaphore semaphore_image_available;
 	VkSemaphore semaphore_render_finished;
 	bool record_command_buffer;
-} vulkan_renderer_t;
+};
 
 VkBool32 debug_report_callback(
 	VkDebugReportFlagsEXT flags,
@@ -135,7 +143,7 @@ static lx_result_t get_surface_details(lx_allocator_t *allocator, lx_gpu_t *gpu,
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_instance(vulkan_renderer_t *renderer,
+static lx_result_t create_instance(lx_renderer_t *renderer,
 							const char *validation_layers[],
 							uint32_t num_valiation_layers,
 							const char *extensions[],
@@ -198,7 +206,7 @@ static lx_result_t create_instance(vulkan_renderer_t *renderer,
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_extensions(vulkan_renderer_t *renderer)
+static lx_result_t create_extensions(lx_renderer_t *renderer)
 {
 	// Setup debug report extension
 	VkDebugReportCallbackCreateInfoEXT debug_report_create_info = { 0 };
@@ -219,7 +227,7 @@ static lx_result_t create_extensions(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_surfaces(vulkan_renderer_t *renderer, void *window_handle, void *module_handle)
+static lx_result_t create_surfaces(lx_renderer_t *renderer, void *window_handle, void *module_handle)
 {
 	VkWin32SurfaceCreateInfoKHR surface_create_info;
 	surface_create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -244,7 +252,7 @@ static lx_result_t create_surfaces(vulkan_renderer_t *renderer, void *window_han
 	return LX_SUCCESS;
 }
 
-static void destroy_swap_chain(vulkan_renderer_t *renderer, swap_chain_t *swap_chain)
+static void destroy_swap_chain(lx_renderer_t *renderer, swap_chain_t *swap_chain)
 {
 	lx_array_for(VkImageView, iv, swap_chain->image_views) {
 		vkDestroyImageView(renderer->device->handle, *iv, NULL);
@@ -257,7 +265,7 @@ static void destroy_swap_chain(vulkan_renderer_t *renderer, swap_chain_t *swap_c
 	lx_free(renderer->allocator, swap_chain);
 }
 
-static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, lx_extent2_t swap_chain_extent, VkSwapchainKHR old_swap_chain_handle)
+static lx_result_t create_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_chain_extent, VkSwapchainKHR old_swap_chain_handle)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 	LX_ASSERT(renderer->device, "Invalid logical device");
@@ -388,7 +396,7 @@ static lx_result_t create_swap_chain(vulkan_renderer_t *renderer, lx_extent2_t s
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_render_pass(vulkan_renderer_t *renderer)
+static lx_result_t create_render_pass(lx_renderer_t *renderer)
 {
 	VkAttachmentDescription color_attachment = { 0 };
 	color_attachment.format = renderer->swap_chain->surface_format.format;
@@ -436,7 +444,7 @@ static lx_result_t create_render_pass(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-static void destroy_frame_buffers(vulkan_renderer_t *renderer)
+static void destroy_frame_buffers(lx_renderer_t *renderer)
 {
 	if (!renderer->frame_buffers)
 		return;
@@ -449,7 +457,7 @@ static void destroy_frame_buffers(vulkan_renderer_t *renderer)
 	renderer->frame_buffers = NULL;
 }
 
-static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
+static lx_result_t create_frame_buffers(lx_renderer_t *renderer)
 {
 	LX_ASSERT(renderer->render_pass, "Invalid render pass");
 	
@@ -480,7 +488,7 @@ static lx_result_t create_frame_buffers(vulkan_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
-static void destroy_command_pool_buffers(vulkan_renderer_t *renderer, command_pool_t *command_pool)
+static void destroy_command_pool_buffers(lx_renderer_t *renderer, command_pool_t *command_pool)
 {
 	LX_ASSERT(command_pool, "Invalid command pool");
 
@@ -495,7 +503,7 @@ static void destroy_command_pool_buffers(vulkan_renderer_t *renderer, command_po
 	command_pool->command_buffers = NULL;
 }
 
-static lx_result_t create_command_pool_buffers(vulkan_renderer_t *renderer, command_pool_t *command_pool, size_t num_buffers)
+static lx_result_t create_command_pool_buffers(lx_renderer_t *renderer, command_pool_t *command_pool, size_t num_buffers)
 {
 	LX_ASSERT(renderer->command_pool->command_buffers == NULL, "Command pool buffers already exists");
 	
@@ -517,7 +525,7 @@ static lx_result_t create_command_pool_buffers(vulkan_renderer_t *renderer, comm
 	return LX_SUCCESS;
 }
 
-static lx_result_t create_command_pool(vulkan_renderer_t *renderer, uint32_t queue_family_index)
+static lx_result_t create_command_pool(lx_renderer_t *renderer, uint32_t queue_family_index)
 {
 	LX_ASSERT(renderer->command_pool == NULL, "Command pool already exists");
 
@@ -545,7 +553,7 @@ static lx_result_t create_command_pool(vulkan_renderer_t *renderer, uint32_t que
 	return LX_SUCCESS;
 }
 
-static void destroy_command_pool(vulkan_renderer_t *renderer)
+static void destroy_command_pool(lx_renderer_t *renderer)
 {
 	if (!renderer->command_pool)
 		return;
@@ -566,8 +574,8 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	const char *extension_names[] = { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME, VK_EXT_DEBUG_REPORT_EXTENSION_NAME };
 	const uint32_t num_extension_names = sizeof(extension_names) / sizeof(char*);
 
-	vulkan_renderer_t *vulkan_renderer = lx_alloc(allocator, sizeof(vulkan_renderer_t));
-	*vulkan_renderer = (vulkan_renderer_t) { 0 };
+    lx_renderer_t *vulkan_renderer = lx_alloc(allocator, sizeof(lx_renderer_t));
+	*vulkan_renderer = (lx_renderer_t) { 0 };
 	vulkan_renderer->allocator = allocator;
 	vulkan_renderer->record_command_buffer = true;
 
@@ -671,104 +679,99 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	LX_ASSERT(allocator, "Invalid allocator");
 	LX_ASSERT(renderer, "Invalid renderer");
 
-	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t*)renderer;
-
 	// Destroy semaphores
-	lx_gpu_destroy_semaphore(vulkan_renderer->device, vulkan_renderer->semaphore_image_available);
-    lx_gpu_destroy_semaphore(vulkan_renderer->device, vulkan_renderer->semaphore_render_finished);
+	lx_gpu_destroy_semaphore(renderer->device, renderer->semaphore_image_available);
+    lx_gpu_destroy_semaphore(renderer->device, renderer->semaphore_render_finished);
 	
 	// Destroy command pool
-	destroy_command_pool(vulkan_renderer);
+	destroy_command_pool(renderer);
 	
 	// Destroy frame buffer(s)
-	destroy_frame_buffers(vulkan_renderer);
+	destroy_frame_buffers(renderer);
 	
 	// Destroy render pipline(s)
-	if (vulkan_renderer->pipeline) {
-		vkDestroyPipelineLayout(vulkan_renderer->device->handle, vulkan_renderer->pipeline_layout, NULL);
-		vkDestroyPipeline(vulkan_renderer->device->handle, vulkan_renderer->pipeline, NULL);
+	if (renderer->pipeline) {
+		vkDestroyPipelineLayout(renderer->device->handle, renderer->pipeline_layout, NULL);
+		vkDestroyPipeline(renderer->device->handle, renderer->pipeline, NULL);
 	}
 	
 	// Destroy render passe(s)
-	if (vulkan_renderer->render_pass) {
-		vkDestroyRenderPass(vulkan_renderer->device->handle, vulkan_renderer->render_pass, NULL);
+	if (renderer->render_pass) {
+		vkDestroyRenderPass(renderer->device->handle, renderer->render_pass, NULL);
 	}
 	
 	// Destroy swap chain
-	if (vulkan_renderer->swap_chain) {
+	if (renderer->swap_chain) {
 		
 		// Destroy image view(s)
-		if (vulkan_renderer->swap_chain->image_views) {
-			lx_array_for(VkImageView, image_view, vulkan_renderer->swap_chain->image_views) {
-				vkDestroyImageView(vulkan_renderer->device->handle, *image_view, NULL);
+		if (renderer->swap_chain->image_views) {
+			lx_array_for(VkImageView, image_view, renderer->swap_chain->image_views) {
+				vkDestroyImageView(renderer->device->handle, *image_view, NULL);
 			}
-			lx_array_destroy(vulkan_renderer->swap_chain->image_views);
-			lx_array_destroy(vulkan_renderer->swap_chain->images);
-			vulkan_renderer->swap_chain->image_views = NULL;
-			vulkan_renderer->swap_chain->images = NULL;
+			lx_array_destroy(renderer->swap_chain->image_views);
+			lx_array_destroy(renderer->swap_chain->images);
+            renderer->swap_chain->image_views = NULL;
+            renderer->swap_chain->images = NULL;
 		}
 
-		vkDestroySwapchainKHR(vulkan_renderer->device->handle, vulkan_renderer->swap_chain->handle, NULL);
-		lx_free(vulkan_renderer->allocator, vulkan_renderer->swap_chain);
-		vulkan_renderer->swap_chain = NULL;
+		vkDestroySwapchainKHR(renderer->device->handle, renderer->swap_chain->handle, NULL);
+		lx_free(renderer->allocator, renderer->swap_chain);
+        renderer->swap_chain = NULL;
 	}
 	
 	// Destroy gpu devices
-	if (vulkan_renderer->device) {
-        lx_gpu_destroy_device(vulkan_renderer->device);
-		vulkan_renderer->device = NULL;
+	if (renderer->device) {
+        lx_gpu_destroy_device(renderer->device);
+        renderer->device = NULL;
 	}
 	
 	// Destroy gpu(s)
-	if (vulkan_renderer->gpus) {
-        lx_array_for(lx_gpu_t, gpu, vulkan_renderer->gpus) {
+	if (renderer->gpus) {
+        lx_array_for(lx_gpu_t, gpu, renderer->gpus) {
             lx_gpu_destroy(gpu);
         }
-		vulkan_renderer->gpus = NULL;
+        renderer->gpus = NULL;
 	}
 
 	// Destroy surface(s)
-	if (vulkan_renderer->presentation_surface) {
-		vkDestroySurfaceKHR(vulkan_renderer->instance, vulkan_renderer->presentation_surface, NULL);
+	if (renderer->presentation_surface) {
+		vkDestroySurfaceKHR(renderer->instance, renderer->presentation_surface, NULL);
 	}
 
 	// Destroy extensions
 	PFN_vkDestroyDebugReportCallbackEXT destroy_debug_report_extension = NULL;
-	*(void **)&destroy_debug_report_extension = vkGetInstanceProcAddr(vulkan_renderer->instance, "vkDestroyDebugReportCallbackEXT");
+	*(void **)&destroy_debug_report_extension = vkGetInstanceProcAddr(renderer->instance, "vkDestroyDebugReportCallbackEXT");
 	
-	if (destroy_debug_report_extension && vulkan_renderer->debug_report_extension) {
-		destroy_debug_report_extension(vulkan_renderer->instance, vulkan_renderer->debug_report_extension, NULL);
+	if (destroy_debug_report_extension && renderer->debug_report_extension) {
+		destroy_debug_report_extension(renderer->instance, renderer->debug_report_extension, NULL);
 	}
 	
 	// Destroy Vulkan instance
-	if (vulkan_renderer->instance) {
-		vkDestroyInstance(vulkan_renderer->instance, NULL);
+	if (renderer->instance) {
+		vkDestroyInstance(renderer->instance, NULL);
 	}
 	
-	lx_free(allocator, vulkan_renderer);
+	lx_free(allocator, renderer);
 }
 
 lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id)
 {
 	LX_ASSERT(code && code->size > 0, "Invalid shader byte code");
 
-	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
-    return lx_gpu_create_shader(vr->device, lx_buffer_data(code), lx_buffer_size(code), id);
+    return lx_gpu_create_shader(renderer->device, lx_buffer_data(code), lx_buffer_size(code), id);
 }
 
 lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 
-	vulkan_renderer_t *vulkan_renderer = (vulkan_renderer_t *)renderer;
-
-    lx_shader_t *vertex_shader = lx_gpu_get_shader(vulkan_renderer->device, vertex_shader_id);
+    lx_shader_t *vertex_shader = lx_gpu_get_shader(renderer->device, vertex_shader_id);
 	if (!vertex_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Vertex shader missing, id=%d", vertex_shader_id);
 		return LX_ERROR;
 	}
 
-    lx_shader_t *fragment_shader = lx_gpu_get_shader(vulkan_renderer->device, fragment_shader_id);
+    lx_shader_t *fragment_shader = lx_gpu_get_shader(renderer->device, fragment_shader_id);
 	if (!fragment_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Fragment shader missing, id=%d", fragment_shader_id);
 		return LX_ERROR;
@@ -801,14 +804,14 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	VkViewport viewport = { 0 };
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
-	viewport.width = (float)vulkan_renderer->swap_chain->extent.width;
-	viewport.height = (float)vulkan_renderer->swap_chain->extent.height;
+	viewport.width = (float)renderer->swap_chain->extent.width;
+	viewport.height = (float)renderer->swap_chain->extent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
 	VkRect2D scissor = { 0 };
 	scissor.offset = (VkOffset2D) { 0, 0 };
-	scissor.extent = vulkan_renderer->swap_chain->extent;
+	scissor.extent = renderer->swap_chain->extent;
 
 	VkPipelineViewportStateCreateInfo viewport_state_info = { 0 };
 	viewport_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -852,7 +855,7 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	pipeline_layout_create_info.setLayoutCount = 0;
 	pipeline_layout_create_info.pushConstantRangeCount = 0;
 
-	if (vkCreatePipelineLayout(vulkan_renderer->device->handle, &pipeline_layout_create_info, NULL, &vulkan_renderer->pipeline_layout) != VK_SUCCESS) {
+	if (vkCreatePipelineLayout(renderer->device->handle, &pipeline_layout_create_info, NULL, &renderer->pipeline_layout) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe layout");
 		return LX_ERROR;
 	}
@@ -867,12 +870,12 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	pipeline_create_info.pRasterizationState = &rasterizer;
 	pipeline_create_info.pMultisampleState = &multisampling;
 	pipeline_create_info.pColorBlendState = &color_blend_state_info;
-	pipeline_create_info.layout = vulkan_renderer->pipeline_layout;
-	pipeline_create_info.renderPass = vulkan_renderer->render_pass;
+	pipeline_create_info.layout = renderer->pipeline_layout;
+	pipeline_create_info.renderPass = renderer->render_pass;
 	pipeline_create_info.subpass = 0;
 	pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
 
-	if (vkCreateGraphicsPipelines(vulkan_renderer->device->handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &vulkan_renderer->pipeline) != VK_SUCCESS) {
+	if (vkCreateGraphicsPipelines(renderer->device->handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &renderer->pipeline) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe");
 		return LX_ERROR;
 	}
@@ -883,28 +886,26 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 
 void lx_renderer_render_frame(lx_renderer_t *renderer)
 {
-	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
-
-	if (vr->record_command_buffer) {
+	if (renderer->record_command_buffer) {
 
 		// Record command buffers
-		for (uint32_t i = 0; i < lx_array_size(vr->command_pool->command_buffers); ++i) {
+		for (uint32_t i = 0; i < lx_array_size(renderer->command_pool->command_buffers); ++i) {
 			VkCommandBufferBeginInfo buffer_begin_info = { 0 };
 			buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 			buffer_begin_info.pInheritanceInfo = NULL; // Optional
 
-			VkCommandBuffer *cb = lx_array_at(vr->command_pool->command_buffers, i);
+			VkCommandBuffer *cb = lx_array_at(renderer->command_pool->command_buffers, i);
 			vkBeginCommandBuffer(*cb, &buffer_begin_info);
 
-			frame_buffer_t *fb = lx_array_at(vr->frame_buffers, i);
+			frame_buffer_t *fb = lx_array_at(renderer->frame_buffers, i);
 			VkRenderPassBeginInfo render_pass_begin_info = { 0 };
 			render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			render_pass_begin_info.renderPass = vr->render_pass;
+			render_pass_begin_info.renderPass = renderer->render_pass;
 			render_pass_begin_info.framebuffer = fb->handle;
 
 			render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
-			render_pass_begin_info.renderArea.extent = vr->swap_chain->extent;
+			render_pass_begin_info.renderArea.extent = renderer->swap_chain->extent;
 
 			VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
 			render_pass_begin_info.clearValueCount = 1;
@@ -912,7 +913,7 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 
 			vkCmdBeginRenderPass(*cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vr->pipeline);
+			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline);
 
 			vkCmdDraw(*cb, 3, 1, 0, 0);
 
@@ -924,14 +925,14 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 			}
 		}
 
-		vr->record_command_buffer = false;
+		renderer->record_command_buffer = false;
 	}
 
-	vkQueueWaitIdle(vr->device->presentation_queue);
+	vkQueueWaitIdle(renderer->device->presentation_queue);
 	
 	// Acquire image
 	uint32_t image_index;
-	VkResult result = vkAcquireNextImageKHR(vr->device->handle, vr->swap_chain->handle, INTMAX_MAX, vr->semaphore_image_available, VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(renderer->device->handle, renderer->swap_chain->handle, INTMAX_MAX, renderer->semaphore_image_available, VK_NULL_HANDLE, &image_index);
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		//lx_renderer_reset_swap_chain(renderer, 1, 2);
 		return;
@@ -945,21 +946,21 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	VkSubmitInfo submit_info = { 0 };
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkSemaphore wait_semaphores[] = { vr->semaphore_image_available };
+	VkSemaphore wait_semaphores[] = { renderer->semaphore_image_available };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submit_info.waitSemaphoreCount = 1;
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 
-	VkCommandBuffer *cmd_buffer = lx_array_at(vr->command_pool->command_buffers, image_index);
+	VkCommandBuffer *cmd_buffer = lx_array_at(renderer->command_pool->command_buffers, image_index);
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = cmd_buffer;
 
-	VkSemaphore signals[] = { vr->semaphore_render_finished };
+	VkSemaphore signals[] = { renderer->semaphore_render_finished };
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signals;
 
-	result = vkQueueSubmit(vr->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+	result = vkQueueSubmit(renderer->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to sumbit draw command buffer (Error: %d)", result);
 		return;
@@ -971,79 +972,77 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 	present_info.waitSemaphoreCount = 1;
 	present_info.pWaitSemaphores = signals;
 
-	VkSwapchainKHR swap_chains[] = { vr->swap_chain->handle };
+	VkSwapchainKHR swap_chains[] = { renderer->swap_chain->handle };
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
 	present_info.pImageIndices = &image_index;
 
 	present_info.pResults = NULL; // Optional
 
-	if (vkQueuePresentKHR(vr->device->presentation_queue, &present_info) != VK_SUCCESS) {
+	if (vkQueuePresentKHR(renderer->device->presentation_queue, &present_info) != VK_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to present image");
 	}
 
-	vkQueueWaitIdle(vr->device->presentation_queue);
+	vkQueueWaitIdle(renderer->device->presentation_queue);
 }
 
 void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
-	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
 	
-	LX_ASSERT(vr->device, "Invalid device");
-	vkDeviceWaitIdle(vr->device->handle);
+	LX_ASSERT(renderer->device, "Invalid device");
+	vkDeviceWaitIdle(renderer->device->handle);
 }
 
 lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_chain_extent, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
-	vulkan_renderer_t *vr = (vulkan_renderer_t *)renderer;
 
-	vkQueueWaitIdle(vr->device->presentation_queue);
+	vkQueueWaitIdle(renderer->device->presentation_queue);
 
 	LX_LOG_DEBUG(LOG_TAG, "Resetting swap chain");
 
-	destroy_frame_buffers(vr);
-	destroy_command_pool_buffers(vr, vr->command_pool);
+	destroy_frame_buffers(renderer);
+	destroy_command_pool_buffers(renderer, renderer->command_pool);
 
-	vkDestroyPipeline(vr->device->handle, vr->pipeline, NULL);
-	vr->pipeline = VK_NULL_HANDLE;
+	vkDestroyPipeline(renderer->device->handle, renderer->pipeline, NULL);
+	renderer->pipeline = VK_NULL_HANDLE;
 	
-	vkDestroyPipelineLayout(vr->device->handle, vr->pipeline_layout, NULL);
-	vr->pipeline_layout = VK_NULL_HANDLE;
+	vkDestroyPipelineLayout(renderer->device->handle, renderer->pipeline_layout, NULL);
+	renderer->pipeline_layout = VK_NULL_HANDLE;
 	
-	vkDestroyRenderPass(vr->device->handle, vr->render_pass, NULL);
-	vr->render_pass = VK_NULL_HANDLE;
+	vkDestroyRenderPass(renderer->device->handle, renderer->render_pass, NULL);
+	renderer->render_pass = VK_NULL_HANDLE;
 
-	swap_chain_t* old_swap_chain = vr->swap_chain;
-	vr->swap_chain = NULL;
+	swap_chain_t* old_swap_chain = renderer->swap_chain;
+	renderer->swap_chain = NULL;
 
-	VkResult result = create_swap_chain(vr, swap_chain_extent, old_swap_chain->handle);
+	VkResult result = create_swap_chain(renderer, swap_chain_extent, old_swap_chain->handle);
 	if (result != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to reset swap chain");
 		return LX_ERROR;
 	}
 
-	destroy_swap_chain(vr, old_swap_chain);
+	destroy_swap_chain(renderer, old_swap_chain);
 
-	if (create_render_pass(vr) != LX_SUCCESS) {
+	if (create_render_pass(renderer) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to creat render pass");
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Render pass [OK]");
 
-	if (create_frame_buffers(vr) != LX_SUCCESS) {
+	if (create_frame_buffers(renderer) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 
-	if (create_command_pool_buffers(vr, vr->command_pool, lx_array_size(vr->frame_buffers)) != LX_SUCCESS) {
+	if (create_command_pool_buffers(renderer, renderer->command_pool, lx_array_size(renderer->frame_buffers)) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool buffers");
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
 
-	vr->record_command_buffer = true;
+	renderer->record_command_buffer = true;
 	return lx_renderer_create_render_pipelines(renderer, vertex_shader_id, fragment_shader_id);
 }

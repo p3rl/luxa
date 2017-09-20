@@ -1,8 +1,7 @@
-#ifndef ARRAY_H
-#define ARRAY_H
+#pragma once
 
+#include <luxa/platform.h>
 #include <luxa/memory/allocator.h>
-#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,7 +59,7 @@ static void lx_array_push_back(lx_array_t *array, lx_any_t element)
 	LX_ASSERT(array, "Invalid array");
 	if (array->size >= array->capacity) {
 		array->capacity = array->capacity ? array->capacity * 2 : DEFAULT_ARRAY_CAPACITY;
-		lx_realloc(array->allocator, array->buffer, array->element_size * array->capacity);
+        array->buffer = lx_realloc(array->allocator, array->buffer, array->element_size * array->capacity);
 	}
 	memcpy(array->buffer + (array->size * array->element_size), element, array->element_size);
 	array->size++;
@@ -123,7 +122,7 @@ static inline lx_range_t lx_array_range(const lx_array_t *array)
 	};
 }
 
-static inline lx_any_t lx_array_find(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static inline lx_any_t lx_array_find_if(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
 
@@ -139,11 +138,47 @@ static inline lx_any_t lx_array_find(const lx_array_t *array, lx_binary_predicat
 	return NULL;
 }
 
+static inline bool lx_array_remove_at(lx_array_t *array, size_t index)
+{
+    if (index >= array->size || array->size == 0)
+        return false;
+
+    if (index == 0) {
+        memmove(array->buffer, array->buffer + array->element_size, array->element_size * (array->size - 1));
+    }
+    else if (index != array->size - 1){
+        const size_t num_elements = array->size - 1 - index;
+        char *dst = array->buffer + array->element_size * index;
+        char *src = dst + array->element_size;
+        memmove(dst, src, num_elements * array->element_size);
+    }
+
+    array->size--;
+    return true;
+}
+
+static inline bool lx_array_remove_if(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+{
+    LX_ASSERT(array, "Invalid array");
+    LX_ASSERT(predicate, "Invalid array");
+
+    size_t i = 0;
+    lx_range_t range = lx_array_range(array);
+    char *element = range.begin;
+    while (element != range.end) {
+        if (predicate(element, arg))
+            return lx_array_remove_at(array, i);
+
+        element += range.step_size;
+        ++i;
+    }
+
+    return false;
+}
+
 #define lx_array_for(type, ptr, arr)\
 	for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif // ARRAY_H

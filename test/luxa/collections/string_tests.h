@@ -1,5 +1,4 @@
-#ifndef STRING_TESTS_H
-#define STRING_TESTS_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,5 +9,3 @@ void setup_string_test_fixture();
 #ifdef __cplusplus
 }
 #endif
-
-#endif //STRING_TESTS_H

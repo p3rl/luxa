@@ -228,19 +228,19 @@ lx_result_t lx_gpu_destroy_shader(lx_gpu_device_t *device, uint32_t id)
 {
     LX_ASSERT(device, "Invalid device");
 
-    lx_shader_t *shader = lx_array_find(device->shaders, shader_id_equals, &id);
+    lx_shader_t *shader = lx_array_find_if(device->shaders, shader_id_equals, &id);
     if (!shader) {
         LX_LOG_ERROR(LOG_TAG, "Shader doesn't exists, id=%d", id);
         return LX_ERROR;
     }
 
     vkDestroyShaderModule(device->handle, shader->handle, NULL);
-    //lx_array_remove(device->shaders, shader_id_equals, &id);
+    lx_array_remove_if(device->shaders, shader_id_equals, &id);
 
     return LX_SUCCESS;
 }
 
 lx_shader_t *lx_gpu_get_shader(lx_gpu_device_t *device, uint32_t id)
 {
-    return lx_array_find(device->shaders, shader_id_equals, &id);
+    return lx_array_find_if(device->shaders, shader_id_equals, &id);
 }

@@ -1,5 +1,4 @@
-#ifndef RENDERER_H
-#define RENDERER_H
+#pragma once
 
 #include <luxa/memory/allocator.h>
 #include <luxa/collections/buffer.h>
@@ -28,5 +27,3 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 #ifdef __cplusplus
 }
 #endif
-
-#endif // RENDERER_H

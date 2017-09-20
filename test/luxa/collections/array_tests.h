@@ -1,5 +1,4 @@
-#ifndef ARRAY_TEST_H
-#define ARRAY_TEST_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,5 +9,3 @@ void setup_array_test_fixture();
 #ifdef __cplusplus
 }
 #endif
-
-#endif //ARRAY_TEST_H
