@@ -43,15 +43,15 @@ typedef struct swap_chain {
 struct lx_renderer
 {
 	lx_allocator_t *allocator;
-    lx_array_t *gpus; //lx_gpu_t
+    lx_array_t *gpus; // lx_gpu_t
     lx_gpu_device_t *device;
-	lx_array_t *frame_buffers;	// frame_buffer_t
+    lx_array_t *frame_buffers; // frame_buffer_t
+    lx_render_pipeline_layout_t *render_pipeline_layout;
+    lx_render_pipeline_t *render_pipeline;
 	swap_chain_t *swap_chain;
 	command_pool_t *command_pool;
 	VkInstance instance;
-	VkSurfaceKHR presentation_surface;
-	VkPipelineLayout pipeline_layout;
-	VkPipeline pipeline;
+	VkSurfaceKHR presentation_surface;	
 	VkRenderPass render_pass;
 	VkDebugReportCallbackEXT debug_report_extension;
 	VkSemaphore semaphore_image_available;
@@ -691,10 +691,11 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	destroy_frame_buffers(renderer);
 	
 	// Destroy render pipline(s)
-	if (renderer->pipeline) {
-		vkDestroyPipelineLayout(renderer->device->handle, renderer->pipeline_layout, NULL);
-		vkDestroyPipeline(renderer->device->handle, renderer->pipeline, NULL);
-	}
+    if (renderer->render_pipeline_layout)
+        lx_render_pipeline_destroy_layout(renderer->device, renderer->render_pipeline_layout);
+
+    if (renderer->render_pipeline)
+        lx_render_pipeline_destroy(renderer->device, renderer->render_pipeline);
 	
 	// Destroy render passe(s)
 	if (renderer->render_pass) {
@@ -755,133 +756,29 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	lx_free(allocator, renderer);
 }
 
-lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id)
+lx_result_t lx_renderer_create_shader(lx_renderer_t *renderer, lx_buffer_t *code, uint32_t id, lx_shader_stage_t stage)
 {
 	LX_ASSERT(code && code->size > 0, "Invalid shader byte code");
-
-    return lx_gpu_create_shader(renderer->device, lx_buffer_data(code), lx_buffer_size(code), id);
+    return lx_gpu_create_shader(renderer->device, lx_buffer_data(code), lx_buffer_size(code), id, stage);
 }
 
-lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
+lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
+    LX_ASSERT(!renderer->render_pipeline, "Render pipeline already exists");
 
-    lx_shader_t *vertex_shader = lx_gpu_shader(renderer->device, vertex_shader_id);
-	if (!vertex_shader) {
-		LX_LOG_ERROR(LOG_TAG, "Vertex shader missing, id=%d", vertex_shader_id);
-		return LX_ERROR;
-	}
+    renderer->render_pipeline_layout = lx_render_pipeline_create_layout(renderer->allocator);
+    
+    lx_render_pipeline_add_shader(renderer->render_pipeline_layout, vertex_shader_id);
+    lx_render_pipeline_add_shader(renderer->render_pipeline_layout, fragment_shader_id);
+    lx_render_pipeline_set_viewport_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
+    lx_render_pipeline_set_scissor_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
 
-    lx_shader_t *fragment_shader = lx_gpu_shader(renderer->device, fragment_shader_id);
-	if (!fragment_shader) {
-		LX_LOG_ERROR(LOG_TAG, "Fragment shader missing, id=%d", fragment_shader_id);
-		return LX_ERROR;
-	}
+    if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to create render pipeline");
+        return LX_ERROR;
+    }
 
-	VkPipelineShaderStageCreateInfo vertex_shader_stage_info = { 0 };
-	vertex_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	vertex_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertex_shader_stage_info.module = vertex_shader->handle;
-	vertex_shader_stage_info.pName = "main";
-
-	VkPipelineShaderStageCreateInfo fragment_shader_state_info = { 0 };
-	fragment_shader_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	fragment_shader_state_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragment_shader_state_info.module = fragment_shader->handle;
-	fragment_shader_state_info.pName = "main";
-
-	VkPipelineShaderStageCreateInfo shader_stages[] = { vertex_shader_stage_info, fragment_shader_state_info };
-
-	VkPipelineVertexInputStateCreateInfo vertex_input_info = { 0 };
-	vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_info.vertexBindingDescriptionCount = 0;
-	vertex_input_info.vertexAttributeDescriptionCount = 0;
-
-	VkPipelineInputAssemblyStateCreateInfo input_assembly_info = { 0 };
-	input_assembly_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	input_assembly_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	input_assembly_info.primitiveRestartEnable = VK_FALSE;
-
-	VkViewport viewport = { 0 };
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = (float)renderer->swap_chain->extent.width;
-	viewport.height = (float)renderer->swap_chain->extent.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-
-	VkRect2D scissor = { 0 };
-	scissor.offset = (VkOffset2D) { 0, 0 };
-	scissor.extent = renderer->swap_chain->extent;
-
-	VkPipelineViewportStateCreateInfo viewport_state_info = { 0 };
-	viewport_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewport_state_info.viewportCount = 1;
-	viewport_state_info.pViewports = &viewport;
-	viewport_state_info.scissorCount = 1;
-	viewport_state_info.pScissors = &scissor;
-
-	VkPipelineRasterizationStateCreateInfo rasterizer = { 0 };
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-	rasterizer.depthBiasEnable = VK_FALSE;
-
-	VkPipelineMultisampleStateCreateInfo multisampling = { 0 };
-	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-	VkPipelineColorBlendAttachmentState color_blend_attachment = { 0 };
-	color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	color_blend_attachment.blendEnable = VK_FALSE;
-
-	VkPipelineColorBlendStateCreateInfo color_blend_state_info = { 0 };
-	color_blend_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	color_blend_state_info.logicOpEnable = VK_FALSE;
-	color_blend_state_info.logicOp = VK_LOGIC_OP_COPY;
-	color_blend_state_info.attachmentCount = 1;
-	color_blend_state_info.pAttachments = &color_blend_attachment;
-	color_blend_state_info.blendConstants[0] = 0.0f;
-	color_blend_state_info.blendConstants[1] = 0.0f;
-	color_blend_state_info.blendConstants[2] = 0.0f;
-	color_blend_state_info.blendConstants[3] = 0.0f;
-
-	VkPipelineLayoutCreateInfo pipeline_layout_create_info = { 0 };
- 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_create_info.setLayoutCount = 0;
-	pipeline_layout_create_info.pushConstantRangeCount = 0;
-
-	if (vkCreatePipelineLayout(renderer->device->handle, &pipeline_layout_create_info, NULL, &renderer->pipeline_layout) != VK_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe layout");
-		return LX_ERROR;
-	}
-
-	VkGraphicsPipelineCreateInfo pipeline_create_info = { 0 };
-	pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipeline_create_info.stageCount = 2;
-	pipeline_create_info.pStages = shader_stages;
-	pipeline_create_info.pVertexInputState = &vertex_input_info;
-	pipeline_create_info.pInputAssemblyState = &input_assembly_info;
-	pipeline_create_info.pViewportState = &viewport_state_info;
-	pipeline_create_info.pRasterizationState = &rasterizer;
-	pipeline_create_info.pMultisampleState = &multisampling;
-	pipeline_create_info.pColorBlendState = &color_blend_state_info;
-	pipeline_create_info.layout = renderer->pipeline_layout;
-	pipeline_create_info.renderPass = renderer->render_pass;
-	pipeline_create_info.subpass = 0;
-	pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
-
-	if (vkCreateGraphicsPipelines(renderer->device->handle, VK_NULL_HANDLE, 1, &pipeline_create_info, NULL, &renderer->pipeline) != VK_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to create render pipe");
-		return LX_ERROR;
-	}
-
-	LX_LOG_DEBUG(LOG_TAG, "Render pipeline(s) [OK]");
 	return LX_SUCCESS;
 }
 
@@ -914,7 +811,7 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 
 			vkCmdBeginRenderPass(*cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline);
+			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
 
 			vkCmdDraw(*cb, 3, 1, 0, 0);
 
@@ -995,7 +892,7 @@ void lx_renderer_device_wait_idle(lx_renderer_t *renderer)
 	vkDeviceWaitIdle(renderer->device->handle);
 }
 
-lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_chain_extent, uint32_t vertex_shader_id, uint32_t fragment_shader_id)
+lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_chain_extent)
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 
@@ -1006,11 +903,8 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 	destroy_frame_buffers(renderer);
 	destroy_command_pool_buffers(renderer, renderer->command_pool);
 
-	vkDestroyPipeline(renderer->device->handle, renderer->pipeline, NULL);
-	renderer->pipeline = VK_NULL_HANDLE;
-	
-	vkDestroyPipelineLayout(renderer->device->handle, renderer->pipeline_layout, NULL);
-	renderer->pipeline_layout = VK_NULL_HANDLE;
+    lx_render_pipeline_destroy(renderer->device, renderer->render_pipeline);
+    renderer->render_pipeline = NULL;
 	
 	vkDestroyRenderPass(renderer->device->handle, renderer->render_pass, NULL);
 	renderer->render_pass = VK_NULL_HANDLE;
@@ -1023,6 +917,9 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 		LX_LOG_ERROR(LOG_TAG, "Failed to reset swap chain");
 		return LX_ERROR;
 	}
+
+    lx_render_pipeline_set_viewport_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
+    lx_render_pipeline_set_scissor_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
 
 	destroy_swap_chain(renderer, old_swap_chain);
 
@@ -1045,5 +942,5 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
 
 	renderer->record_command_buffer = true;
-	return lx_renderer_create_render_pipelines(renderer, vertex_shader_id, fragment_shader_id);
+    return lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline);
 }

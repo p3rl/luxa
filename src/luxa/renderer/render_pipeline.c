@@ -1,24 +1,6 @@
 #include <luxa/renderer/render_pipeline.h>
 #include <vulkan/vulkan.h>
 
-struct lx_render_pipeline_layout {
-    lx_allocator_t *allocator;
-    VkPipelineLayout handle;
-    lx_array_t *shader_ids; // uint32_t
-    VkPipelineVertexInputStateCreateInfo vertex_input_state;
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_state;
-    VkViewport viewport;
-    VkRect2D scissor;
-    VkPipelineRasterizationStateCreateInfo rasterization_state;
-    VkPipelineMultisampleStateCreateInfo multisample_state;
-    VkPipelineColorBlendAttachmentState color_blend_attachment_state;
-    VkPipelineColorBlendStateCreateInfo color_blend_state;
-};
-
-struct lx_render_pipeline {
-    lx_render_pipeline_layout_t *layout;
-    VkPipeline handle;
-}; 
 lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *allocator)
 {
     LX_ASSERT(allocator, "Invaild allocator");
@@ -70,18 +52,49 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     layout->color_blend_state.blendConstants[2] = 0.0f;
     layout->color_blend_state.blendConstants[3] = 0.0f;
 
+    layout->is_dirty = true;
+
     return layout;
 }
 
-void lx_render_pipeline_destroy_layout(lx_render_pipeline_layout_t *layout)
+void lx_render_pipeline_destroy_layout(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout)
 {
     LX_ASSERT(layout, "Invalid layout");
     LX_ASSERT(layout->allocator, "Invalid layout allocator");
+    
+    if (layout->handle != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device->handle, layout->handle, NULL);
+    }
+    
+    lx_array_destroy(layout->shader_ids);
     lx_free(layout->allocator, layout);
+}
+
+void lx_render_pipeline_set_viewport_extent(lx_render_pipeline_layout_t *layout, VkExtent2D extent)
+{
+    LX_ASSERT(layout, "Invalid layout");
+
+    layout->viewport.width = (float)extent.width;
+    layout->viewport.height = (float)extent.height;
+    layout->is_dirty = true;
+}
+
+void lx_render_pipeline_set_scissor_extent(lx_render_pipeline_layout_t *layout, VkExtent2D extent)
+{
+    LX_ASSERT(layout, "Invalid layout");
+
+    layout->scissor.extent = extent;
+    layout->is_dirty = true;
 }
 
 lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout, VkRenderPass render_pass, lx_render_pipeline_t **pipeline)
 {
+    // Check if layout has changed and needs to be recreated
+    if (layout->is_dirty && layout->handle != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device->handle, layout->handle, NULL);
+        layout->handle = VK_NULL_HANDLE;
+    }
+    
     if (layout->handle == VK_NULL_HANDLE) {
         VkPipelineLayoutCreateInfo pipeline_layout_create_info = { 0 };
         pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -91,30 +104,39 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
         if (vkCreatePipelineLayout(device->handle, &pipeline_layout_create_info, NULL, &layout->handle) != VK_SUCCESS) {
             return LX_ERROR;
         }
+
+        layout->is_dirty = false;
     }
 
     // Create shader stages
-    size_t num_shaders = lx_array_size(layout->shader_ids);
-    VkPipelineShaderStageCreateInfo *shader_stages = lx_alloc(layout->allocator, sizeof(VkPipelineShaderStageCreateInfo) * num_shaders);
+    size_t num_stages = lx_array_size(layout->shader_ids);
+    VkPipelineShaderStageCreateInfo *shader_stages = lx_alloc(layout->allocator, sizeof(VkPipelineShaderStageCreateInfo) * num_stages);
     
-    for (size_t i = 0; i < num_shaders; ++i) {
+    for (size_t i = 0; i < num_stages; ++i) {
         uint32_t *shader_id = lx_array_at(layout->shader_ids, i);
         lx_shader_t *shader = lx_gpu_shader(device, *shader_id);
         LX_ASSERT(shader, "Shader does not exists");
-
+        shader_stages[i] = (VkPipelineShaderStageCreateInfo) { 0 };
         shader_stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         shader_stages[i].module = shader->handle;
         shader_stages[i].stage = shader->stage;
         shader_stages[i].pName = "main";
     }
+
+    VkPipelineViewportStateCreateInfo viewport_state_info = { 0 };
+    viewport_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state_info.viewportCount = 1;
+    viewport_state_info.pViewports = &layout->viewport;
+    viewport_state_info.scissorCount = 1;
+    viewport_state_info.pScissors = &layout->scissor;
     
     VkGraphicsPipelineCreateInfo pipeline_create_info = { 0 };
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline_create_info.stageCount = 0;
-    pipeline_create_info.pStages = NULL;
+    pipeline_create_info.stageCount = (uint32_t)num_stages;
+    pipeline_create_info.pStages = shader_stages;
     pipeline_create_info.pVertexInputState = &layout->vertex_input_state;
     pipeline_create_info.pInputAssemblyState = &layout->input_assembly_state;
-    pipeline_create_info.pViewportState = NULL;
+    pipeline_create_info.pViewportState = &viewport_state_info;
     pipeline_create_info.pRasterizationState = &layout->rasterization_state;
     pipeline_create_info.pMultisampleState = &layout->multisample_state;
     pipeline_create_info.pColorBlendState = &layout->color_blend_state;
@@ -128,7 +150,7 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
     
     if (result == VK_SUCCESS) {
         *pipeline = lx_alloc(layout->allocator, sizeof(lx_render_pipeline_t));
-        **pipeline = (lx_render_pipeline_t) { .layout = layout, .handle = pipeline_handle };
+        **pipeline = (lx_render_pipeline_t) { .allocator = layout->allocator, .handle = pipeline_handle };
     }
 
     lx_free(layout->allocator, shader_stages);
@@ -136,19 +158,17 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
     return result;
 }
 
-void lx_render_pipeline_destroy_pipeline(lx_gpu_device_t *device, lx_render_pipeline_t *pipeline)
-{
-    vkDestroyPipeline(device->handle, pipeline->handle, NULL);
-    pipeline->handle = VK_NULL_HANDLE;
-}
-
 void lx_render_pipeline_destroy(lx_gpu_device_t *device, lx_render_pipeline_t *pipeline)
 {
     LX_ASSERT(device, "Invalid device");
     LX_ASSERT(pipeline, "Invalid pipeline");
 
-    lx_render_pipeline_destroy_layout(pipeline->layout);
-    lx_render_pipeline_destroy_pipeline(device, pipeline);
+    if (pipeline->handle != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device->handle, pipeline->handle, NULL);
+        pipeline->handle = VK_NULL_HANDLE;
+    }
+
+    lx_free(pipeline->allocator, pipeline);
 }
 
 lx_result_t lx_render_pipeline_add_shader(lx_render_pipeline_layout_t *layout, uint32_t shader_id)

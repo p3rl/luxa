@@ -55,7 +55,7 @@ void lx_gpu_destroy_semaphore(lx_gpu_device_t *device, VkSemaphore semaphore);
 
 lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size, VkBufferUsageFlags buffer_usage_flags, VkMemoryPropertyFlags memory_property_flags);
 
-lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id);
+lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id, VkShaderStageFlags stage);
 
 lx_result_t lx_gpu_destroy_shader(lx_gpu_device_t *device, uint32_t id);
 

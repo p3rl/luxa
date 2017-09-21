@@ -33,7 +33,7 @@ LRESULT CALLBACK handle_window_message(HWND hWnd, UINT message, WPARAM wParam, L
 			PostQuitMessage(0);
 			break;
 		case WM_SIZE: {
-			lx_renderer_reset_swap_chain(renderer, (lx_extent2_t) { LOWORD(lParam), HIWORD(lParam) }, 1, 2);
+			lx_renderer_reset_swap_chain(renderer, (lx_extent2_t) { LOWORD(lParam), HIWORD(lParam) });
 		}
 		break;
 		default:
@@ -93,12 +93,12 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
 	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\vert.spv");
-	lx_renderer_create_shader(renderer, shader_buffer, 1);
+	lx_renderer_create_shader(renderer, shader_buffer, 1, LX_SHADER_STAGE_VERTEX);
 
 	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\shaders\\frag.spv");
-	lx_renderer_create_shader(renderer, shader_buffer, 2);
+	lx_renderer_create_shader(renderer, shader_buffer, 2, LX_SHADER_STAGE_FRAGMENT);
 
-	lx_renderer_create_render_pipelines(renderer, 1, 2);
+	lx_renderer_create_render_pipeline(renderer, 1, 2);
 
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);

@@ -198,14 +198,14 @@ lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size
     return NULL;
 }
 
-lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id)
+lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id, VkShaderStageFlags stage)
 {
     LX_ASSERT(device, "Invalid device");
     LX_ASSERT(code && code_size > 0, "Invalid shader byte code");
 
     LX_ASSERT(!lx_array_exists(device->shaders, shader_id_equals, &id), "Shader already exists");
 
-    lx_shader_t shader = { .handle = 0, .id = id };
+    lx_shader_t shader = { .handle = 0, .id = id, .stage = stage };
 
     VkShaderModuleCreateInfo create_info = { 0 };
     create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
