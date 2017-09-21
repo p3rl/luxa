@@ -45,7 +45,7 @@ project "luxa"
     characterset "MBCS"
 
     filter "configurations:Debug"
-        defines { "DEBUG" }
+        defines { "DEBUG", "VK_USE_PLATFORM_WIN32_KHR" }
         symbols "On"
 
     filter "configurations:Release"

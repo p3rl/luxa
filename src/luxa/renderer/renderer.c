@@ -1,8 +1,9 @@
 #include <luxa/renderer/renderer.h>
 #include <luxa/renderer/gpu.h>
+#include <luxa/renderer/render_pipeline.h>
 #include <luxa/collections/array.h>
 #include <luxa/log.h>
-#include <string.h>
+#include <vulkan/vulkan.h>
 
 #define LOG_TAG "Renderer"
 
@@ -369,22 +370,22 @@ static lx_result_t create_swap_chain(lx_renderer_t *renderer, lx_extent2_t swap_
 	swap_chain->image_views = lx_array_create_with_size(renderer->allocator, sizeof(VkImageView), num_images);
 	VkImageView *image_view = lx_array_begin(swap_chain->image_views);
 	lx_array_for(VkImage, image, swap_chain->images) {
-		VkImageViewCreateInfo create_info = { 0 };
-		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		create_info.image = *image;
-		create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		create_info.format = swap_chain->surface_format.format;
-		create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-		create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		create_info.subresourceRange.baseMipLevel = 0;
-		create_info.subresourceRange.levelCount = 1;
-		create_info.subresourceRange.baseArrayLayer = 0;
-		create_info.subresourceRange.layerCount = 1;
+		VkImageViewCreateInfo image_view_create_info = { 0 };
+		image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		image_view_create_info.image = *image;
+		image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		image_view_create_info.format = swap_chain->surface_format.format;
+		image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_view_create_info.subresourceRange.baseMipLevel = 0;
+		image_view_create_info.subresourceRange.levelCount = 1;
+		image_view_create_info.subresourceRange.baseArrayLayer = 0;
+		image_view_create_info.subresourceRange.layerCount = 1;
 
-		if (vkCreateImageView(renderer->device->handle, &create_info, NULL, image_view) != VK_SUCCESS) {
+		if (vkCreateImageView(renderer->device->handle, &image_view_create_info, NULL, image_view) != VK_SUCCESS) {
 			LX_LOG_WARNING(LOG_TAG, "Failed to creat swap chain image view");
 		}
 
@@ -765,13 +766,13 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 {
 	LX_ASSERT(renderer, "Invalid renderer");
 
-    lx_shader_t *vertex_shader = lx_gpu_get_shader(renderer->device, vertex_shader_id);
+    lx_shader_t *vertex_shader = lx_gpu_shader(renderer->device, vertex_shader_id);
 	if (!vertex_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Vertex shader missing, id=%d", vertex_shader_id);
 		return LX_ERROR;
 	}
 
-    lx_shader_t *fragment_shader = lx_gpu_get_shader(renderer->device, fragment_shader_id);
+    lx_shader_t *fragment_shader = lx_gpu_shader(renderer->device, fragment_shader_id);
 	if (!fragment_shader) {
 		LX_LOG_ERROR(LOG_TAG, "Fragment shader missing, id=%d", fragment_shader_id);
 		return LX_ERROR;
@@ -851,7 +852,7 @@ lx_result_t lx_renderer_create_render_pipelines(lx_renderer_t *renderer, uint32_
 	color_blend_state_info.blendConstants[3] = 0.0f;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_create_info = { 0 };
-	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+ 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_create_info.setLayoutCount = 0;
 	pipeline_layout_create_info.pushConstantRangeCount = 0;
 

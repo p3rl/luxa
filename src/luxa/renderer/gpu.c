@@ -240,7 +240,7 @@ lx_result_t lx_gpu_destroy_shader(lx_gpu_device_t *device, uint32_t id)
     return LX_SUCCESS;
 }
 
-lx_shader_t *lx_gpu_get_shader(lx_gpu_device_t *device, uint32_t id)
+lx_shader_t *lx_gpu_shader(lx_gpu_device_t *device, uint32_t id)
 {
     return lx_array_find_if(device->shaders, shader_id_equals, &id);
 }

@@ -3,7 +3,6 @@
 #include <luxa/platform.h>
 #include <luxa/memory/allocator.h>
 #include <luxa/collections/array.h>
-#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
 #ifdef __cplusplus
@@ -25,6 +24,7 @@ typedef struct lx_gpu {
 typedef struct lx_shader {
     VkShaderModule handle;
     uint32_t id;
+    VkShaderStageFlags stage;
 } lx_shader_t;
 
 typedef struct lx_gpu_device {
@@ -59,7 +59,7 @@ lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size
 
 lx_result_t lx_gpu_destroy_shader(lx_gpu_device_t *device, uint32_t id);
 
-lx_shader_t *lx_gpu_get_shader(lx_gpu_device_t *device, uint32_t id);
+lx_shader_t *lx_gpu_shader(lx_gpu_device_t *device, uint32_t id);
 
 #ifdef __cplusplus
 }
