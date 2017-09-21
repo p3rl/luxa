@@ -10,10 +10,8 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     
     layout->allocator = allocator;
     layout->shader_ids = lx_array_create(allocator, sizeof(uint32_t));
-
-    layout->vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    layout->vertex_input_state.vertexBindingDescriptionCount = 0;
-    layout->vertex_input_state.vertexAttributeDescriptionCount = 0;
+    layout->vertex_bindings = lx_array_create(allocator, sizeof(VkVertexInputBindingDescription));
+    layout->vertex_attributes = lx_array_create(allocator, sizeof(VkVertexInputAttributeDescription));
 
     layout->input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     layout->input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -67,6 +65,8 @@ void lx_render_pipeline_destroy_layout(lx_gpu_device_t *device, lx_render_pipeli
     }
     
     lx_array_destroy(layout->shader_ids);
+    lx_array_destroy(layout->vertex_bindings);
+    lx_array_destroy(layout->vertex_attributes);
     lx_free(layout->allocator, layout);
 }
 
@@ -85,6 +85,21 @@ void lx_render_pipeline_set_scissor_extent(lx_render_pipeline_layout_t *layout, 
 
     layout->scissor.extent = extent;
     layout->is_dirty = true;
+}
+
+void lx_render_pipeline_add_vertex_binding(lx_render_pipeline_layout_t *layout, VkVertexInputBindingDescription *vertex_binding)
+{
+    LX_ASSERT(layout, "Invalid layout");
+
+    lx_array_push_back(layout->vertex_bindings, vertex_binding);
+    layout->is_dirty = true;
+}
+
+void lx_render_pipeline_add_vertex_attribute(lx_render_pipeline_layout_t *layout, VkVertexInputAttributeDescription *attribute)
+{
+    LX_ASSERT(layout, "Invalid layout");
+    
+    lx_array_push_back(layout->vertex_attributes, attribute);
 }
 
 lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout, VkRenderPass render_pass, lx_render_pipeline_t **pipeline)
@@ -123,6 +138,13 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
         shader_stages[i].pName = "main";
     }
 
+    VkPipelineVertexInputStateCreateInfo vertex_input_state = { 0 };
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.pVertexBindingDescriptions = lx_array_begin(layout->vertex_bindings);
+    vertex_input_state.vertexBindingDescriptionCount = (uint32_t)lx_array_size(layout->vertex_bindings);
+    vertex_input_state.pVertexAttributeDescriptions = lx_array_begin(layout->vertex_attributes);
+    vertex_input_state.vertexAttributeDescriptionCount = (uint32_t)lx_array_size(layout->vertex_attributes);
+
     VkPipelineViewportStateCreateInfo viewport_state_info = { 0 };
     viewport_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state_info.viewportCount = 1;
@@ -134,7 +156,7 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipeline_create_info.stageCount = (uint32_t)num_stages;
     pipeline_create_info.pStages = shader_stages;
-    pipeline_create_info.pVertexInputState = &layout->vertex_input_state;
+    pipeline_create_info.pVertexInputState = &vertex_input_state;
     pipeline_create_info.pInputAssemblyState = &layout->input_assembly_state;
     pipeline_create_info.pViewportState = &viewport_state_info;
     pipeline_create_info.pRasterizationState = &layout->rasterization_state;

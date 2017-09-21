@@ -11,7 +11,8 @@ typedef struct lx_render_pipeline_layout {
     lx_allocator_t *allocator;
     VkPipelineLayout handle;
     lx_array_t *shader_ids; // uint32_t
-    VkPipelineVertexInputStateCreateInfo vertex_input_state;
+    lx_array_t *vertex_bindings; // VkVertexInputBindingDescription
+    lx_array_t *vertex_attributes; // VkVertexInputAttributeDescription
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state;
     VkViewport viewport;
     VkRect2D scissor;
@@ -35,11 +36,15 @@ void lx_render_pipeline_set_viewport_extent(lx_render_pipeline_layout_t *layout,
 
 void lx_render_pipeline_set_scissor_extent(lx_render_pipeline_layout_t *layout, VkExtent2D extent);
 
+lx_result_t lx_render_pipeline_add_shader(lx_render_pipeline_layout_t *layout, uint32_t shader_id);
+
+void lx_render_pipeline_add_vertex_binding(lx_render_pipeline_layout_t *layout, VkVertexInputBindingDescription *vertex_binding);
+
+void lx_render_pipeline_add_vertex_attribute(lx_render_pipeline_layout_t *layout, VkVertexInputAttributeDescription *attribute);
+
 lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout, VkRenderPass render_pass, lx_render_pipeline_t **pipeline);
 
 void lx_render_pipeline_destroy(lx_gpu_device_t *device, lx_render_pipeline_t *pipeline);
-
-lx_result_t lx_render_pipeline_add_shader(lx_render_pipeline_layout_t *layout, uint32_t shader_id);
 
 #ifdef __cplusplus
 }
