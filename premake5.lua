@@ -8,7 +8,7 @@ project "application"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
     warnings "Extra"
-    disablewarnings { "4204", "4100", "4152" }
+    disablewarnings { "4204", "4100", "4152", "4201" }
 
     includedirs { "src" }
 
@@ -33,7 +33,7 @@ project "luxa"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
     warnings "Extra"
-    disablewarnings { "4204", "4100", "4152" }
+    disablewarnings { "4204", "4100", "4152", "4201" }
 
     includedirs { "src", "C://VulkanSDK//1.0.57.0//Include" }
     libdirs "C://VulkanSDK//1.0.57.0//Lib"

@@ -115,6 +115,11 @@ static inline size_t lx_string_hash64(const lx_any_t key)
 	return (size_t)lx_murmur_hash_64(s, strlen(s), 0);
 }
 
+static inline size_t lx_id_hash64(const lx_any_t key)
+{
+    return (size_t)key;
+}
+
 #ifdef __cplusplus
 }
 #endif

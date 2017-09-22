@@ -32,6 +32,15 @@ static lx_array_t *lx_array_create(lx_allocator_t *allocator, size_t element_siz
 	return a;
 }
 
+static inline void lx_array_reserve(lx_array_t *array, size_t size)
+{
+    if (size < array->capacity)
+        return;
+
+    array->capacity = array->capacity ? array->capacity * 2 : DEFAULT_ARRAY_CAPACITY;
+    array->buffer = lx_realloc(array->allocator, array->buffer, array->element_size * array->capacity);
+}
+
 static lx_array_t *lx_array_create_with_size(lx_allocator_t *allocator, size_t element_size, size_t size)
 {
 	LX_ASSERT(allocator, "Invalid allocator");
@@ -57,10 +66,8 @@ static void lx_array_destroy(lx_array_t *array)
 static void lx_array_push_back(lx_array_t *array, lx_any_t element)
 {
 	LX_ASSERT(array, "Invalid array");
-	if (array->size >= array->capacity) {
-		array->capacity = array->capacity ? array->capacity * 2 : DEFAULT_ARRAY_CAPACITY;
-        array->buffer = lx_realloc(array->allocator, array->buffer, array->element_size * array->capacity);
-	}
+
+    lx_array_reserve(array, array->size);
 	memcpy(array->buffer + (array->size * array->element_size), element, array->element_size);
 	array->size++;
 }
@@ -174,6 +181,15 @@ static inline bool lx_array_remove_if(lx_array_t *array, lx_binary_predicate_t p
     }
 
     return false;
+}
+
+static inline void lx_array_copy(lx_array_t *array, lx_any_t data, size_t size)
+{
+    LX_ASSERT(array, "Invalid array");
+    
+    lx_array_reserve(array, size);
+    memcpy(array->buffer, data, size * array->element_size);
+    array->size = size;
 }
 
 #define lx_array_for(type, ptr, arr)\

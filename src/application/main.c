@@ -7,6 +7,8 @@
 #include <luxa/renderer/renderer.h>
 #include <luxa/log.h>
 #include <luxa/fs.h>
+#include <luxa/renderer/scene.h>
+#include <luxa/renderer/mesh.h>
 
 lx_renderer_t *renderer = NULL;
 
@@ -99,6 +101,60 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	lx_renderer_create_shader(renderer, shader_buffer, 2, LX_SHADER_STAGE_FRAGMENT);
 
 	lx_renderer_create_render_pipeline(renderer, 1, 2);
+
+    lx_mesh_t *mesh = lx_mesh_create(allocator);
+    
+    float size = 1.0f;
+
+    lx_vec3_t vertices[] =
+    { 
+        // Bottom
+        { 0.0f, 0.0f, 0.0f },
+        { size, 0.0f, 0.0f },
+        { size, size, 0.9f },
+        { 0.0f, size, 0.9f },
+
+        // Top
+        { 0.0f, 0.0f, size },
+        { size, 0.0f, size },
+        { size, size, size },
+        { 0.0f, size, size },
+    };
+
+    uint32_t indices[] =
+    {
+        // Front
+        0, 4, 5,
+        0, 5, 1,
+
+        // Right
+        1, 5, 6,
+        1, 6, 2,
+
+        // Back
+        2, 6, 7,
+        2, 7, 3,
+
+        // Left
+        3, 7, 4,
+        3, 4, 0,
+
+        // Top
+        4, 7, 6,
+        4, 6, 5,
+
+        // Bottom
+        3, 0, 1,
+        3, 1, 2,
+    };
+
+    lx_mesh_set_vertices(mesh, vertices, 8);
+    lx_mesh_set_indices(mesh, indices, 12);
+
+    lx_scene_t *scene = lx_scene_create(allocator);
+    lx_scene_node_t node = lx_scene_create_node(scene, lx_scene_root_node());
+    lx_renderable_t renderable = lx_scene_create_renderable(scene, LX_RENDERABLE_TYPE_MESH, mesh);
+    lx_scene_attach_renderable(scene, node, renderable);
 
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
