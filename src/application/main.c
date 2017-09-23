@@ -156,6 +156,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
     lx_renderable_t renderable = lx_scene_create_renderable(scene, LX_RENDERABLE_TYPE_MESH, mesh);
     lx_scene_attach_renderable(scene, node, renderable);
 
+    lx_renderer_initialize_scene(renderer, scene);
+
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
 
@@ -164,7 +166,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 
-		lx_renderer_render_frame(renderer);
+		lx_renderer_render_frame(renderer, scene);
 		lx_renderer_device_wait_idle(renderer);
 	}
 

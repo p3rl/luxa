@@ -8,6 +8,19 @@ static bool shader_id_equals(lx_shader_t *shader, lx_any_t id)
     return shader->id == *(uint32_t*)id;
 }
 
+uint32_t find_memory_type_index(lx_gpu_device_t *device, VkMemoryRequirements *memory_requirements, VkMemoryPropertyFlags memory_properties)
+{
+    uint32_t memory_type = memory_requirements->memoryTypeBits;
+    for (uint32_t i = 0; i < device->gpu->memory_properties.memoryTypeCount; ++i) {
+        if ((memory_type & (1 << i)) && (device->gpu->memory_properties.memoryTypes[i].propertyFlags & memory_properties) == memory_properties) {
+            return i;
+        }
+    }
+    
+    LX_ASSERT(1, "Unable to find memory type index");
+    return UINT32_MAX;
+}
+
 lx_result_t lx_gpu_all_available(lx_allocator_t *allocator, VkInstance instance, VkSurfaceKHR presentation_surface, lx_array_t **gpus)
 {
     LX_ASSERT(allocator, "Invalid allocator");
@@ -193,9 +206,109 @@ void lx_gpu_destroy_semaphore(lx_gpu_device_t *device, VkSemaphore semaphore)
     vkDestroySemaphore(device->handle, semaphore, NULL);
 }
 
-lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size, VkBufferUsageFlags buffer_usage_flags, VkMemoryPropertyFlags memory_property_flags)
+lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties)
 {
-    return NULL;
+    VkBufferCreateInfo create_info = { 0 };
+    create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    create_info.size = size;
+    create_info.usage = usage;
+    create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer buffer;
+    if (vkCreateBuffer(device->handle, &create_info, NULL, &buffer) != VK_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to create buffer");
+        return NULL;
+    }
+
+    VkMemoryRequirements reqs;
+    vkGetBufferMemoryRequirements(device->handle, buffer, &reqs);
+
+    VkMemoryAllocateInfo alloc_info = { 0 };
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = reqs.size;
+    alloc_info.memoryTypeIndex = find_memory_type_index(device, &reqs, memory_properties);
+
+    VkDeviceMemory memory;
+    if (vkAllocateMemory(device->handle, &alloc_info, NULL, &memory) != VK_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to allocate memory");
+        return NULL;
+    }
+
+    if (vkBindBufferMemory(device->handle, buffer, memory, 0) != VK_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to bind memory to buffer");
+        return NULL;
+    }
+
+    lx_gpu_buffer_t *gpu_buffer = lx_alloc(device->gpu->allocator, sizeof(lx_gpu_buffer_t));
+    *gpu_buffer = (lx_gpu_buffer_t) { .handle = buffer, .memory = memory, .size = size, .offset = 0, .data = NULL };
+
+    return gpu_buffer;
+}
+
+void lx_gpu_destroy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer)
+{
+    LX_ASSERT(device, "Invalid device");
+    LX_ASSERT(buffer, "Invalid buffer");
+    LX_ASSERT(buffer->handle != VK_NULL_HANDLE, "Invalid buffer handle");
+
+    vkDestroyBuffer(device->handle, buffer->handle, NULL);
+    vkFreeMemory(device->handle, buffer->memory, NULL);
+}
+
+bool lx_gpu_map_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer)
+{
+    return vkMapMemory(device->handle, buffer->memory, buffer->offset, buffer->size, 0, &buffer->data) == VK_SUCCESS;
+}
+
+void lx_gpu_unmap_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer)
+{
+    vkUnmapMemory(device->handle, buffer->memory);
+}
+
+lx_result_t lx_gpu_copy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *dst, lx_gpu_buffer_t *src, VkCommandPool command_pool)
+{
+    LX_ASSERT(device, "Invalid device");
+    LX_ASSERT(dst, "Invalid destination buffer");
+    LX_ASSERT(dst, "Invalid source buffer");
+
+    VkDeviceSize size = dst->size;
+
+    VkCommandBufferAllocateInfo allocation_info = { 0 };
+    allocation_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocation_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocation_info.commandPool = command_pool;
+    allocation_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    if (vkAllocateCommandBuffers(device->handle, &allocation_info, &command_buffer) != VK_SUCCESS) {
+        return LX_ERROR;
+    }
+
+    VkCommandBufferBeginInfo begin_info = { 0 };
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+        return LX_ERROR;
+    }
+
+    VkBufferCopy region = { 0 };
+    region.srcOffset = 0; // Optional
+    region.dstOffset = 0; // Optional
+    region.size = size;
+    vkCmdCopyBuffer(command_buffer, src->handle, dst->handle, 1, &region);
+
+    vkEndCommandBuffer(command_buffer);
+
+    VkSubmitInfo submit_info = { 0 };
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    vkQueueSubmit(device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+    vkQueueWaitIdle(device->graphics_queue);
+
+    return LX_SUCCESS;
 }
 
 lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id, VkShaderStageFlags stage)

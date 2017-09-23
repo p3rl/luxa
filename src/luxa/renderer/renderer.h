@@ -3,6 +3,7 @@
 #include <luxa/memory/allocator.h>
 #include <luxa/collections/buffer.h>
 #include <luxa/math/math.h>
+#include <luxa/renderer/scene.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +26,9 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
 void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer);
 
-void lx_renderer_render_frame(lx_renderer_t *renderer);
+void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene);
+
+void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene);
 
 void lx_renderer_device_wait_idle(lx_renderer_t *renderer);
 

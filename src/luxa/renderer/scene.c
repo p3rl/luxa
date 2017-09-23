@@ -1,5 +1,4 @@
 #include <luxa/renderer/scene.h>
-#include <luxa/collections/array.h>
 #include <luxa/collections/map.h>
 #include <luxa/hash.h>
 
@@ -16,12 +15,6 @@ typedef struct buffer {
     size_t capacity;
 } buffer_t;
 
-typedef struct render_data {
-    lx_renderable_type_t type;
-    lx_renderable_t handle;
-    lx_any_t data;
-} render_data_t;
-
 struct lx_scene {
     lx_allocator_t *allocator;
     
@@ -33,7 +26,7 @@ struct lx_scene {
     lx_renderable_t *renderable;
     lx_mat4_t *transform;
 
-    lx_array_t *rendera_data; // render_data_t
+    lx_array_t *render_data; // render_data_t
 };
 
 void allocate_buffer(lx_scene_t *scene, size_t capacity)
@@ -64,18 +57,23 @@ lx_scene_t *lx_scene_create(lx_allocator_t *allocator)
     lx_mat4_identity(&scene->transform[1]);
 
     // Init render data
-    scene->rendera_data = lx_array_create(allocator, sizeof(render_data_t));
-    render_data_t nil_render_data = { 0 };
-    lx_array_push_back(scene->rendera_data, &nil_render_data);
+    scene->render_data = lx_array_create(allocator, sizeof(lx_scene_render_data_t));
+    lx_scene_render_data_t nil_render_data = { 0 };
+    lx_array_push_back(scene->render_data, &nil_render_data);
     
     return scene;
 }
 
 void lx_scene_destroy(lx_scene_t *scene)
 {
-    lx_array_destroy(scene->rendera_data);
+    lx_array_destroy(scene->render_data);
     lx_free(scene->allocator, scene->buffer.data);
     *scene = (lx_scene_t) { 0 };
+}
+
+size_t lx_scene_size(const lx_scene_t *scene)
+{
+    return scene->buffer.size;
 }
 
 lx_scene_node_t lx_scene_first_child(lx_scene_t *scene, lx_scene_node_t parent)
@@ -125,9 +123,9 @@ lx_renderable_t lx_scene_create_renderable(lx_scene_t *scene, lx_renderable_type
 {
     LX_ASSERT(type == LX_RENDERABLE_TYPE_MESH, "Only meshes is allowed");
 
-    lx_renderable_t handle = lx_array_size(scene->rendera_data);
-    render_data_t rendera_data = { .handle = handle,.type = type, .data = render_data };
-    lx_array_push_back(scene->rendera_data, &rendera_data);
+    lx_renderable_t handle = lx_array_size(scene->render_data);
+    lx_scene_render_data_t rendera_data = { .handle = handle,.type = type, .data = render_data };
+    lx_array_push_back(scene->render_data, &rendera_data);
     return handle;
 }
 
@@ -137,4 +135,15 @@ void lx_scene_attach_renderable(lx_scene_t *scene, lx_scene_node_t node, lx_rend
     LX_ASSERT(lx_is_some_scene_node(node), "Invalid scene node");
 
     scene->renderable[node] = renderable;
+}
+
+lx_renderable_t lx_scene_renderable(lx_scene_t *scene, lx_scene_node_t node)
+{
+    LX_ASSERT(lx_is_some_scene_node(node), "Invalid scene node");
+    return scene->renderable[node];
+}
+
+lx_scene_render_data_t *lx_scene_render_data(lx_scene_t *scene, lx_renderable_t renderable)
+{
+    return lx_array_at(scene->render_data, renderable);
 }

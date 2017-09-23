@@ -2,6 +2,7 @@
 
 #include <luxa/platform.h>
 #include <luxa/memory/allocator.h>
+#include <luxa/collections/array.h>
 #include <luxa/math/math.h>
 
 #ifdef __cplusplus
@@ -17,6 +18,12 @@ typedef enum lx_renderable_type {
 } lx_renderable_type_t;
 
 typedef uint64_t lx_renderable_t;
+
+typedef struct lx_scene_render_data {
+    lx_renderable_type_t type;
+    lx_renderable_t handle;
+    lx_any_t data;
+} lx_scene_render_data_t;
 
 static inline lx_scene_node_t lx_nil_scene_node()
 {
@@ -38,9 +45,16 @@ static inline bool lx_is_nil_scene_node(uint64_t i)
     return i == 0;
 }
 
+static inline bool lx_is_some_renderable(lx_renderable_t renderable)
+{
+    return renderable != 0;
+}
+
 lx_scene_t *lx_scene_create(lx_allocator_t *allocator);
 
 void lx_scene_destroy(lx_scene_t *scene);
+
+size_t lx_scene_size(const lx_scene_t *scene);
 
 lx_scene_node_t lx_scene_first_child(lx_scene_t *scene, lx_scene_node_t parent);
 
@@ -51,6 +65,10 @@ lx_scene_node_t lx_scene_create_node(lx_scene_t *scene, lx_scene_node_t parent);
 lx_renderable_t lx_scene_create_renderable(lx_scene_t *scene, lx_renderable_type_t type, lx_any_t render_data);
 
 void lx_scene_attach_renderable(lx_scene_t *scene, lx_scene_node_t node, lx_renderable_t renderable);
+
+lx_renderable_t lx_scene_renderable(lx_scene_t *scene, lx_scene_node_t node);
+
+lx_scene_render_data_t *lx_scene_render_data(lx_scene_t *scene, lx_renderable_t renderable);
 
 #ifdef __cplusplus
 }

@@ -1,8 +1,9 @@
 #include <luxa/renderer/renderer.h>
 #include <luxa/renderer/gpu.h>
 #include <luxa/renderer/render_pipeline.h>
-#include <luxa/collections/array.h>
+#include <luxa/renderer/mesh.h>
 #include <luxa/log.h>
+#include <luxa/collections/array.h>
 #include <vulkan/vulkan.h>
 
 #define LOG_TAG "Renderer"
@@ -774,6 +775,20 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
     lx_render_pipeline_set_viewport_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
     lx_render_pipeline_set_scissor_extent(renderer->render_pipeline_layout, renderer->swap_chain->extent);
 
+    VkVertexInputBindingDescription mesh_vertex_binding = { 0 };
+    mesh_vertex_binding.binding = 0;
+    mesh_vertex_binding.stride = sizeof(lx_vec3_t);
+    mesh_vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription mesh_vertex_attribute = { 0 };
+    mesh_vertex_attribute.binding = 0;
+    mesh_vertex_attribute.location = 0;
+    mesh_vertex_attribute.offset = 0;
+    mesh_vertex_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+    lx_render_pipeline_add_vertex_binding(renderer->render_pipeline_layout, &mesh_vertex_binding);
+    lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_vertex_attribute);
+
     if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {
         LX_LOG_ERROR(LOG_TAG, "Failed to create render pipeline");
         return LX_ERROR;
@@ -782,11 +797,11 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 	return LX_SUCCESS;
 }
 
-void lx_renderer_render_frame(lx_renderer_t *renderer)
+void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene)
 {
 	if (renderer->record_command_buffer) {
-
-		// Record command buffers
+        
+        // Record command buffers
 		for (uint32_t i = 0; i < lx_array_size(renderer->command_pool->command_buffers); ++i) {
 			VkCommandBufferBeginInfo buffer_begin_info = { 0 };
 			buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -813,7 +828,29 @@ void lx_renderer_render_frame(lx_renderer_t *renderer)
 
 			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
 
-			vkCmdDraw(*cb, 3, 1, 0, 0);
+
+            // Draw meshes
+            const size_t scene_size = lx_scene_size(scene);
+            for (lx_scene_node_t node = 1; node < scene_size; ++node) {
+                lx_renderable_t renderable = lx_scene_renderable(scene, node);
+
+                if (!lx_is_some_renderable(renderable))
+                    continue;
+
+                lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
+                if (!rd)
+                    continue;
+
+                lx_mesh_t *mesh = rd->data;
+                lx_gpu_buffer_t *vertex_buffer = lx_mesh_vertex_buffer(mesh);
+                lx_gpu_buffer_t *index_buffer = lx_mesh_index_buffer(mesh);
+
+                VkBuffer buffers[] = { vertex_buffer->handle };
+                VkDeviceSize offsets[] = { 0 };
+                vkCmdBindVertexBuffers(*cb, 0, 1, buffers, offsets);
+                vkCmdBindIndexBuffer(*cb, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(*cb, (uint32_t)lx_mesh_num_indices(mesh), 1, 0, 0, 0);
+            }
 
 			vkCmdEndRenderPass(*cb);
 
@@ -943,4 +980,52 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 
 	renderer->record_command_buffer = true;
     return lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline);
+}
+
+void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
+{
+    const size_t scene_size = lx_scene_size(scene);
+    for (size_t i = 1; i < scene_size; ++i) {
+        lx_renderable_t renderable = lx_scene_renderable(scene, i);
+        
+        if (!lx_is_some_renderable(renderable))
+            continue;
+
+        lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
+        if (!rd)
+            continue;
+
+        lx_mesh_t *mesh = rd->data;
+        size_t size = lx_mesh_vertices_byte_size(mesh);
+        
+        // Create vertex buffer
+        lx_gpu_buffer_t *staging_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        LX_ASSERT(staging_buffer, "Failed to create buffer");
+                
+        lx_gpu_map_memory(renderer->device, staging_buffer);
+        memcpy(staging_buffer->data, lx_mesh_vertices(mesh), lx_mesh_vertices_byte_size(mesh));
+        lx_gpu_unmap_memory(renderer->device, staging_buffer);
+
+        lx_gpu_buffer_t *vertex_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
+
+        lx_gpu_copy_buffer(renderer->device, vertex_buffer, staging_buffer, renderer->command_pool->handle);
+        lx_gpu_destroy_buffer(renderer->device, staging_buffer);
+
+        // Create index buffer
+        size = lx_mesh_indices_byte_size(mesh);
+        staging_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        LX_ASSERT(staging_buffer, "Failed to create buffer");
+
+        lx_gpu_map_memory(renderer->device, staging_buffer);
+        memcpy(staging_buffer->data, lx_mesh_indices(mesh), size);
+        lx_gpu_unmap_memory(renderer->device, staging_buffer);
+
+        lx_gpu_buffer_t *index_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
+
+        lx_gpu_copy_buffer(renderer->device, index_buffer, staging_buffer, renderer->command_pool->handle);
+        lx_gpu_destroy_buffer(renderer->device, staging_buffer);
+
+        lx_mesh_set_vertex_buffer(mesh, vertex_buffer);
+        lx_mesh_set_index_buffer(mesh, index_buffer);
+    }
 }

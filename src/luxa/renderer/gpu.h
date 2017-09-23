@@ -38,6 +38,9 @@ typedef struct lx_gpu_device {
 
 typedef struct lx_gpu_buffer {
     VkBuffer handle;
+    VkDeviceMemory memory;
+    VkDeviceSize size;
+    VkDeviceSize offset;
     void *data;
 } lx_gpu_buffer_t;
 
@@ -53,7 +56,15 @@ lx_result_t lx_gpu_create_semaphore(lx_gpu_device_t *device, VkSemaphore *semaph
 
 void lx_gpu_destroy_semaphore(lx_gpu_device_t *device, VkSemaphore semaphore);
 
-lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size, VkBufferUsageFlags buffer_usage_flags, VkMemoryPropertyFlags memory_property_flags);
+lx_gpu_buffer_t *lx_gpu_create_buffer(lx_gpu_device_t *device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
+
+void lx_gpu_destroy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer);
+
+bool lx_gpu_map_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer);
+
+void lx_gpu_unmap_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer);
+
+lx_result_t lx_gpu_copy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *dst, lx_gpu_buffer_t *src, VkCommandPool command_pool);
 
 lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id, VkShaderStageFlags stage);
 
