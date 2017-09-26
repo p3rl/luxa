@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include <string.h>
 
+#define LX_ALIGN16 __declspec(align(16))
+#define LX_INLINE inline
+
 #ifndef NULL
 #define NULL ((void*)0);
 #endif

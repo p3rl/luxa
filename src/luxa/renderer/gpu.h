@@ -64,6 +64,8 @@ bool lx_gpu_map_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer);
 
 void lx_gpu_unmap_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer);
 
+void lx_gpu_buffer_copy_data(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer, const void *data);
+
 lx_result_t lx_gpu_copy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *dst, lx_gpu_buffer_t *src, VkCommandPool command_pool);
 
 lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size_t code_size, uint32_t id, VkShaderStageFlags stage);

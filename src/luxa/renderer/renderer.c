@@ -51,6 +51,7 @@ struct lx_renderer
     lx_render_pipeline_t *render_pipeline;
 	swap_chain_t *swap_chain;
 	command_pool_t *command_pool;
+    lx_gpu_buffer_t *model_view_proj_gpu_buffer;
 	VkInstance instance;
 	VkSurfaceKHR presentation_surface;	
 	VkRenderPass render_pass;
@@ -555,6 +556,22 @@ static lx_result_t create_command_pool(lx_renderer_t *renderer, uint32_t queue_f
 	return LX_SUCCESS;
 }
 
+static lx_result_t create_descriptor_pool(lx_gpu_device_t *device, VkDescriptorPoolSize *pool_sizes, uint32_t num_pool_sizes, uint32_t max_sets, VkDescriptorPool *descriptor_pool)
+{
+    VkDescriptorPoolCreateInfo create_info = { 0 };
+    create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    create_info.pPoolSizes = pool_sizes;
+    create_info.poolSizeCount = num_pool_sizes;
+    create_info.maxSets = max_sets;
+
+    if (vkCreateDescriptorPool(device->handle, &create_info, NULL, descriptor_pool) != VK_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to create descriptor pool");
+        return LX_ERROR;
+    }
+
+    return LX_SUCCESS;
+}
+
 static void destroy_command_pool(lx_renderer_t *renderer)
 {
 	if (!renderer->command_pool)
@@ -777,17 +794,25 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
     VkVertexInputBindingDescription mesh_vertex_binding = { 0 };
     mesh_vertex_binding.binding = 0;
-    mesh_vertex_binding.stride = sizeof(lx_vec3_t);
+    mesh_vertex_binding.stride = sizeof(lx_vec2_t);
     mesh_vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription mesh_vertex_attribute = { 0 };
     mesh_vertex_attribute.binding = 0;
     mesh_vertex_attribute.location = 0;
     mesh_vertex_attribute.offset = 0;
-    mesh_vertex_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+    mesh_vertex_attribute.format = VK_FORMAT_R32G32_SFLOAT;
 
     lx_render_pipeline_add_vertex_binding(renderer->render_pipeline_layout, &mesh_vertex_binding);
     lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_vertex_attribute);
+
+    VkDescriptorSetLayoutBinding descriptor_set_binding = { 0 };
+    descriptor_set_binding.binding = 0;
+    descriptor_set_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_binding.descriptorCount = 1;
+    descriptor_set_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    descriptor_set_binding.pImmutableSamplers = NULL;
+    lx_render_pipeline_add_descriptor_set_binding(renderer->render_pipeline_layout, &descriptor_set_binding);
 
     if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {
         LX_LOG_ERROR(LOG_TAG, "Failed to create render pipeline");
@@ -1000,11 +1025,7 @@ void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
         
         // Create vertex buffer
         lx_gpu_buffer_t *staging_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        LX_ASSERT(staging_buffer, "Failed to create buffer");
-                
-        lx_gpu_map_memory(renderer->device, staging_buffer);
-        memcpy(staging_buffer->data, lx_mesh_vertices(mesh), lx_mesh_vertices_byte_size(mesh));
-        lx_gpu_unmap_memory(renderer->device, staging_buffer);
+        lx_gpu_buffer_copy_data(renderer->device, staging_buffer, lx_mesh_vertices(mesh));
 
         lx_gpu_buffer_t *vertex_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
 
@@ -1014,11 +1035,7 @@ void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
         // Create index buffer
         size = lx_mesh_indices_byte_size(mesh);
         staging_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        LX_ASSERT(staging_buffer, "Failed to create buffer");
-
-        lx_gpu_map_memory(renderer->device, staging_buffer);
-        memcpy(staging_buffer->data, lx_mesh_indices(mesh), size);
-        lx_gpu_unmap_memory(renderer->device, staging_buffer);
+        lx_gpu_buffer_copy_data(renderer->device, staging_buffer, lx_mesh_indices(mesh));
 
         lx_gpu_buffer_t *index_buffer = lx_gpu_create_buffer(renderer->device, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
 
@@ -1028,4 +1045,23 @@ void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
         lx_mesh_set_vertex_buffer(mesh, vertex_buffer);
         lx_mesh_set_index_buffer(mesh, index_buffer);
     }
+
+    renderer->model_view_proj_gpu_buffer = lx_gpu_create_buffer(renderer->device, (sizeof(lx_mat4_t) * 3), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    VkDescriptorSet *model_view_proj_descriptor_set = lx_array_at(renderer->render_pipeline->descriptor_sets, 0);
+
+    VkDescriptorBufferInfo descriptor_buffer_info = { 0 };
+    descriptor_buffer_info.buffer = renderer->model_view_proj_gpu_buffer->handle;
+    descriptor_buffer_info.offset = 0;
+    descriptor_buffer_info.range = sizeof(lx_mat4_t) * 3;
+
+    VkWriteDescriptorSet write_descriptor_set = { 0 };
+    write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_descriptor_set.descriptorCount = 1;
+    write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    write_descriptor_set.dstSet = *model_view_proj_descriptor_set;
+    write_descriptor_set.dstBinding = 0;
+    write_descriptor_set.dstArrayElement = 0;
+    write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(renderer->device->handle, 1, &write_descriptor_set, 0, NULL);
 }

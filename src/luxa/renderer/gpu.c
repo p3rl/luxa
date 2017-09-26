@@ -265,6 +265,13 @@ void lx_gpu_unmap_memory(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer)
     vkUnmapMemory(device->handle, buffer->memory);
 }
 
+void lx_gpu_buffer_copy_data(lx_gpu_device_t *device, lx_gpu_buffer_t *buffer, const void *data)
+{
+    LX_ASSERT(lx_gpu_map_memory(device, buffer), "Failed to map gpu memory");
+    memcpy(buffer->data, data, buffer->size);
+    lx_gpu_unmap_memory(device, buffer);
+}
+
 lx_result_t lx_gpu_copy_buffer(lx_gpu_device_t *device, lx_gpu_buffer_t *dst, lx_gpu_buffer_t *src, VkCommandPool command_pool)
 {
     LX_ASSERT(device, "Invalid device");

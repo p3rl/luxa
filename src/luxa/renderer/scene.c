@@ -59,7 +59,7 @@ lx_scene_t *lx_scene_create(lx_allocator_t *allocator)
     // Init render data
     scene->render_data = lx_array_create(allocator, sizeof(lx_scene_render_data_t));
     lx_scene_render_data_t nil_render_data = { 0 };
-    lx_array_push_back(scene->render_data, &nil_render_data);
+    lx_array_push_back(scene->render_data, &nil_render_data); 
     
     return scene;
 }

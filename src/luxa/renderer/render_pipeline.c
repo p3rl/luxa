@@ -1,6 +1,11 @@
 #include <luxa/renderer/render_pipeline.h>
 #include <vulkan/vulkan.h>
 
+bool is_pool_size_type(VkDescriptorPoolSize *pool_size, VkDescriptorType *descriptor_type)
+{
+    return pool_size->type == *descriptor_type;
+}
+
 lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *allocator)
 {
     LX_ASSERT(allocator, "Invaild allocator");
@@ -12,6 +17,7 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     layout->shader_ids = lx_array_create(allocator, sizeof(uint32_t));
     layout->vertex_bindings = lx_array_create(allocator, sizeof(VkVertexInputBindingDescription));
     layout->vertex_attributes = lx_array_create(allocator, sizeof(VkVertexInputAttributeDescription));
+    layout->descriptor_set_bindings = lx_array_create(allocator, sizeof(VkDescriptorSetLayoutBinding));
 
     layout->input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     layout->input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -49,7 +55,7 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     layout->color_blend_state.blendConstants[1] = 0.0f;
     layout->color_blend_state.blendConstants[2] = 0.0f;
     layout->color_blend_state.blendConstants[3] = 0.0f;
-
+    
     layout->is_dirty = true;
 
     return layout;
@@ -57,11 +63,16 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
 
 void lx_render_pipeline_destroy_layout(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout)
 {
+    LX_ASSERT(device, "Invalid layout");
     LX_ASSERT(layout, "Invalid layout");
     LX_ASSERT(layout->allocator, "Invalid layout allocator");
     
     if (layout->handle != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device->handle, layout->handle, NULL);
+    }
+
+    if (layout->descriptor_set_layout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device->handle, layout->descriptor_set_layout, NULL);
     }
     
     lx_array_destroy(layout->shader_ids);
@@ -102,19 +113,65 @@ void lx_render_pipeline_add_vertex_attribute(lx_render_pipeline_layout_t *layout
     lx_array_push_back(layout->vertex_attributes, attribute);
 }
 
+void lx_render_pipeline_add_descriptor_set_binding(lx_render_pipeline_layout_t *layout, VkDescriptorSetLayoutBinding *descriptor_set_binding)
+{
+    LX_ASSERT(layout, "Invalid layout");
+
+    lx_array_push_back(layout->descriptor_set_bindings, descriptor_set_binding);
+}
+
+void lx_render_pipeline_descriptor_pool_sizes(lx_render_pipeline_layout_t *layout, lx_array_t *pool_sizes)
+{
+    LX_ASSERT(layout, "Invalid layout");
+    LX_ASSERT(layout->descriptor_set_bindings, "Invalid descriptor set bindings");
+    LX_ASSERT(pool_sizes, "Invalid pool sizes");
+    
+    lx_array_for(VkDescriptorSetLayoutBinding, db, layout->descriptor_set_bindings) {
+        VkDescriptorPoolSize *pool_size = lx_array_find_if(pool_sizes, is_pool_size_type, &db->descriptorType);
+        if (pool_size) {
+            pool_size->descriptorCount++;
+        }
+        else {
+            VkDescriptorPoolSize ps = { .type = db->descriptorType, .descriptorCount = 1 };
+            lx_array_push_back(pool_sizes, &ps);
+        }
+    }
+}
+
 lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipeline_layout_t *layout, VkRenderPass render_pass, lx_render_pipeline_t **pipeline)
 {
     // Check if layout has changed and needs to be recreated
     if (layout->is_dirty && layout->handle != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device->handle, layout->handle, NULL);
         layout->handle = VK_NULL_HANDLE;
+
+        if (layout->descriptor_set_layout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device->handle, layout->descriptor_set_layout, NULL);
+            layout->descriptor_set_layout = NULL;
+        }
     }
-    
+
     if (layout->handle == VK_NULL_HANDLE) {
         VkPipelineLayoutCreateInfo pipeline_layout_create_info = { 0 };
         pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipeline_layout_create_info.setLayoutCount = 0;
         pipeline_layout_create_info.pushConstantRangeCount = 0;
+
+        // Create descriptor set bindings
+        size_t num_descriptor_bindings = lx_array_size(layout->descriptor_set_bindings);
+        
+        if (num_descriptor_bindings) {
+            VkDescriptorSetLayoutCreateInfo descriptor_set_create_info = { 0 };
+            descriptor_set_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            descriptor_set_create_info.bindingCount = (uint32_t)num_descriptor_bindings;
+            descriptor_set_create_info.pBindings = lx_array_begin(layout->descriptor_set_bindings);
+            
+            if (vkCreateDescriptorSetLayout(device->handle, &descriptor_set_create_info, NULL, &layout->descriptor_set_layout) != VK_SUCCESS) {
+                return LX_ERROR;
+            }
+            
+            pipeline_layout_create_info.setLayoutCount = 1;
+            pipeline_layout_create_info.pSetLayouts = &layout->descriptor_set_layout;
+        }
 
         if (vkCreatePipelineLayout(device->handle, &pipeline_layout_create_info, NULL, &layout->handle) != VK_SUCCESS) {
             return LX_ERROR;
@@ -122,6 +179,43 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
 
         layout->is_dirty = false;
     }
+
+    // Create descriptor pool
+    lx_array_t *pool_sizes = lx_array_create(layout->allocator, sizeof(VkDescriptorPoolSize));
+    lx_render_pipeline_descriptor_pool_sizes(layout, pool_sizes);
+    size_t num_pool_sizes = lx_array_size(pool_sizes);
+
+    VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+
+    if (num_pool_sizes) {
+        VkDescriptorPoolCreateInfo descriptor_pool_create_info = { 0 };
+        descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptor_pool_create_info.poolSizeCount = (uint32_t)num_pool_sizes;
+        descriptor_pool_create_info.pPoolSizes = lx_array_begin(pool_sizes);
+        descriptor_pool_create_info.maxSets = 1;
+        
+        if (vkCreateDescriptorPool(device->handle, &descriptor_pool_create_info, NULL, &descriptor_pool) != VK_SUCCESS) {
+            lx_array_destroy(pool_sizes);
+            pool_sizes = NULL;
+            return LX_ERROR;
+        }
+
+        VkDescriptorSetAllocateInfo descriptor_set_alloc_info = { 0 };
+        descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptor_set_alloc_info.descriptorPool = descriptor_pool;
+        descriptor_set_alloc_info.descriptorSetCount = 1;
+        descriptor_set_alloc_info.pSetLayouts = &layout->descriptor_set_layout;
+
+        if (vkAllocateDescriptorSets(device->handle, &descriptor_set_alloc_info, &descriptor_set) != VK_SUCCESS) {
+            lx_array_destroy(pool_sizes);
+            pool_sizes = NULL;
+            return LX_ERROR;
+        }
+    }
+
+    lx_array_destroy(pool_sizes);
+    pool_sizes = NULL;
 
     // Create shader stages
     size_t num_stages = lx_array_size(layout->shader_ids);
@@ -172,7 +266,16 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
     
     if (result == VK_SUCCESS) {
         *pipeline = lx_alloc(layout->allocator, sizeof(lx_render_pipeline_t));
-        **pipeline = (lx_render_pipeline_t) { .allocator = layout->allocator, .handle = pipeline_handle };
+        **pipeline = (lx_render_pipeline_t) {
+            .allocator = layout->allocator,
+            .handle = pipeline_handle,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_sets = lx_array_create(layout->allocator, sizeof(VkDescriptorSet))
+        };
+
+        if (descriptor_set != VK_NULL_HANDLE) {
+            lx_array_push_back((*pipeline)->descriptor_sets, &descriptor_set);
+        }
     }
 
     lx_free(layout->allocator, shader_stages);
@@ -185,9 +288,12 @@ void lx_render_pipeline_destroy(lx_gpu_device_t *device, lx_render_pipeline_t *p
     LX_ASSERT(device, "Invalid device");
     LX_ASSERT(pipeline, "Invalid pipeline");
 
+    if (pipeline->descriptor_pool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device->handle, pipeline->descriptor_pool, NULL);
+    }
+
     if (pipeline->handle != VK_NULL_HANDLE) {
         vkDestroyPipeline(device->handle, pipeline->handle, NULL);
-        pipeline->handle = VK_NULL_HANDLE;
     }
 
     lx_free(pipeline->allocator, pipeline);

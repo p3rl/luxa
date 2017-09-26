@@ -22,11 +22,11 @@ size_t lx_mesh_vertices_byte_size(const lx_mesh_t *mesh);
 
 size_t lx_mesh_indices_byte_size(const lx_mesh_t *mesh);
 
-const lx_vec3_t *lx_mesh_vertices(const lx_mesh_t *mesh);
+const lx_vec2_t *lx_mesh_vertices(const lx_mesh_t *mesh);
 
 const uint32_t *lx_mesh_indices(const lx_mesh_t *mesh);
 
-void lx_mesh_set_vertices(lx_mesh_t *mesh, lx_vec3_t *vertices, size_t num_vertices);
+void lx_mesh_set_vertices(lx_mesh_t *mesh, lx_vec2_t *vertices, size_t num_vertices);
 
 void lx_mesh_set_indices(lx_mesh_t *mesh, uint32_t *indices, size_t num_indices);
 

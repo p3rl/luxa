@@ -12,7 +12,7 @@
 
 lx_renderer_t *renderer = NULL;
 
-void log(time_t time, lx_log_level_t log_level, const char* tag, const char *message, void *user_data)
+void debug_log(time_t time, lx_log_level_t log_level, const char* tag, const char *message, void *user_data)
 {
 	struct tm tm_info;
 	localtime_s(&tm_info, &time);
@@ -50,7 +50,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 {
 	lx_allocator_t *allocator = lx_allocator_default();
 	lx_initialize_log(allocator, LX_LOG_LEVEL_TRACE);
-	lx_register_log_target(LX_LOG_LEVEL_TRACE, log, NULL);
+	lx_register_log_target(LX_LOG_LEVEL_TRACE, debug_log, NULL);
 
 	const char *window_class_name = "LuxaApp";
 
@@ -104,52 +104,66 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
     lx_mesh_t *mesh = lx_mesh_create(allocator);
     
-    float size = 1.0f;
+    //float size = 1.0f;
 
-    lx_vec3_t vertices[] =
+    //lx_vec3_t vertices[] =
+    //{ 
+    //    // Bottom
+    //    { 0.0f, 0.0f, 0.0f },
+    //    { size, 0.0f, 0.0f },
+    //    { size, size, 0.9f },
+    //    { 0.0f, size, 0.9f },
+
+    //    // Top
+    //    { 0.0f, 0.0f, size },
+    //    { size, 0.0f, size },
+    //    { size, size, size },
+    //    { 0.0f, size, size },
+    //};
+
+    //uint32_t indices[] =
+    //{
+    //    // Front
+    //    0, 4, 5,
+    //    0, 5, 1,
+
+    //    // Right
+    //    1, 5, 6,
+    //    1, 6, 2,
+
+    //    // Back
+    //    2, 6, 7,
+    //    2, 7, 3,
+
+    //    // Left
+    //    3, 7, 4,
+    //    3, 4, 0,
+
+    //    // Top
+    //    4, 7, 6,
+    //    4, 6, 5,
+
+    //    // Bottom
+    //    3, 0, 1,
+    //    3, 1, 2,
+    //};
+
+    lx_vec2_t vertices[] =
     { 
-        // Bottom
-        { 0.0f, 0.0f, 0.0f },
-        { size, 0.0f, 0.0f },
-        { size, size, 0.9f },
-        { 0.0f, size, 0.9f },
-
-        // Top
-        { 0.0f, 0.0f, size },
-        { size, 0.0f, size },
-        { size, size, size },
-        { 0.0f, size, size },
+        { -0.5f, -0.5f },
+        {  0.5f, -0.5f },
+        {  0.5f,  0.5f },
+        { -0.5f,  0.5f },
     };
 
     uint32_t indices[] =
     {
-        // Front
-        0, 4, 5,
-        0, 5, 1,
-
-        // Right
-        1, 5, 6,
-        1, 6, 2,
-
-        // Back
-        2, 6, 7,
-        2, 7, 3,
-
-        // Left
-        3, 7, 4,
-        3, 4, 0,
-
-        // Top
-        4, 7, 6,
-        4, 6, 5,
-
-        // Bottom
-        3, 0, 1,
-        3, 1, 2,
+        0, 1, 2,
+        2, 3, 0
     };
 
-    lx_mesh_set_vertices(mesh, vertices, 8);
-    lx_mesh_set_indices(mesh, indices, 12);
+    lx_mesh_set_vertices(mesh, vertices, sizeof(vertices)/ sizeof(vertices[0]));
+    lx_mesh_set_indices(mesh, indices, sizeof(indices) / sizeof(indices[0]));
 
     lx_scene_t *scene = lx_scene_create(allocator);
     lx_scene_node_t node = lx_scene_create_node(scene, lx_scene_root_node());
