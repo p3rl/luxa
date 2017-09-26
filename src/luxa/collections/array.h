@@ -36,8 +36,8 @@ static inline void lx_array_reserve(lx_array_t *array, size_t size)
 {
     if (size < array->capacity)
         return;
-
-    array->capacity = array->capacity ? array->capacity * 2 : DEFAULT_ARRAY_CAPACITY;
+    
+    array->capacity = array->capacity ? lx_max(array->capacity * 2, size) : DEFAULT_ARRAY_CAPACITY;
     array->buffer = lx_realloc(array->allocator, array->buffer, array->element_size * array->capacity);
 }
 

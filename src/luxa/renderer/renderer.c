@@ -794,14 +794,14 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
     VkVertexInputBindingDescription mesh_vertex_binding = { 0 };
     mesh_vertex_binding.binding = 0;
-    mesh_vertex_binding.stride = sizeof(lx_vec2_t);
+    mesh_vertex_binding.stride = sizeof(lx_vec3_t);
     mesh_vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription mesh_vertex_attribute = { 0 };
     mesh_vertex_attribute.binding = 0;
     mesh_vertex_attribute.location = 0;
     mesh_vertex_attribute.offset = 0;
-    mesh_vertex_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+    mesh_vertex_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 
     lx_render_pipeline_add_vertex_binding(renderer->render_pipeline_layout, &mesh_vertex_binding);
     lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_vertex_attribute);
@@ -822,9 +822,18 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 	return LX_SUCCESS;
 }
 
-void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene)
+void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_camera_t *camera)
 {
 	if (renderer->record_command_buffer) {
+        
+        lx_mat4_t model_view_proj[3];
+        lx_mat4_identity(&model_view_proj[0]);
+        lx_mat4_identity(&model_view_proj[1]);
+        lx_mat4_identity(&model_view_proj[2]);
+
+        float aspect_ratio = ((float)renderer->swap_chain->extent.width / (float)renderer->swap_chain->extent.height);
+        lx_mat4_look_at(&(lx_vec3_t) { 0 }, &camera->position, &camera->up, &model_view_proj[1]);
+        lx_mat4_set_projection_fov(camera->near_plane, camera->far_plane, camera->fov, aspect_ratio, &model_view_proj[2]);
         
         // Record command buffers
 		for (uint32_t i = 0; i < lx_array_size(renderer->command_pool->command_buffers); ++i) {
@@ -851,31 +860,37 @@ void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene)
 
 			vkCmdBeginRenderPass(*cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-			vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
+			    vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
 
+                // Draw meshes
+                const size_t scene_size = lx_scene_size(scene);
+                for (lx_scene_node_t node = 1; node < scene_size; ++node) {
+                    lx_renderable_t renderable = lx_scene_renderable(scene, node);
 
-            // Draw meshes
-            const size_t scene_size = lx_scene_size(scene);
-            for (lx_scene_node_t node = 1; node < scene_size; ++node) {
-                lx_renderable_t renderable = lx_scene_renderable(scene, node);
+                    if (!lx_is_some_renderable(renderable))
+                        continue;
 
-                if (!lx_is_some_renderable(renderable))
-                    continue;
+                    lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
+                    if (!rd)
+                        continue;
 
-                lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
-                if (!rd)
-                    continue;
+                    model_view_proj[0] = *lx_scene_world_transform(scene, node);
+                    lx_gpu_buffer_copy_data(renderer->device, renderer->model_view_proj_gpu_buffer, model_view_proj);
 
-                lx_mesh_t *mesh = rd->data;
-                lx_gpu_buffer_t *vertex_buffer = lx_mesh_vertex_buffer(mesh);
-                lx_gpu_buffer_t *index_buffer = lx_mesh_index_buffer(mesh);
+                    lx_mesh_t *mesh = rd->data;
+                    lx_gpu_buffer_t *vertex_buffer = lx_mesh_vertex_buffer(mesh);
+                    lx_gpu_buffer_t *index_buffer = lx_mesh_index_buffer(mesh);
 
-                VkBuffer buffers[] = { vertex_buffer->handle };
-                VkDeviceSize offsets[] = { 0 };
-                vkCmdBindVertexBuffers(*cb, 0, 1, buffers, offsets);
-                vkCmdBindIndexBuffer(*cb, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(*cb, (uint32_t)lx_mesh_num_indices(mesh), 1, 0, 0, 0);
-            }
+                    VkBuffer buffers[] = { vertex_buffer->handle };
+                    VkDeviceSize offsets[] = { 0 };
+                    vkCmdBindVertexBuffers(*cb, 0, 1, buffers, offsets);
+                    vkCmdBindIndexBuffer(*cb, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdBindDescriptorSets(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline_layout->handle, 0, 1, &renderer->render_pipeline->descriptor_set, 0, NULL);
+                    
+                    size_t num_indices = (uint32_t)lx_mesh_num_indices(mesh);
+                    size_t num_triangles = num_indices / 3;
+                    vkCmdDrawIndexed(*cb, num_indices, num_triangles, 0, 0, 0);
+                }
 
 			vkCmdEndRenderPass(*cb);
 
@@ -1004,7 +1019,28 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
 
 	renderer->record_command_buffer = true;
-    return lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline);
+    if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to create render pipeline");
+        return LX_ERROR;
+    }
+
+    VkDescriptorBufferInfo descriptor_buffer_info = { 0 };
+    descriptor_buffer_info.buffer = renderer->model_view_proj_gpu_buffer->handle;
+    descriptor_buffer_info.offset = 0;
+    descriptor_buffer_info.range = sizeof(lx_mat4_t) * 3;
+
+    VkWriteDescriptorSet write_descriptor_set = { 0 };
+    write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_descriptor_set.descriptorCount = 1;
+    write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    write_descriptor_set.dstSet = renderer->render_pipeline->descriptor_set;
+    write_descriptor_set.dstBinding = 0;
+    write_descriptor_set.dstArrayElement = 0;
+    write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
+
+    vkUpdateDescriptorSets(renderer->device->handle, 1, &write_descriptor_set, 0, NULL);
+
+    return LX_SUCCESS;
 }
 
 void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
@@ -1046,9 +1082,8 @@ void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
         lx_mesh_set_index_buffer(mesh, index_buffer);
     }
 
-    renderer->model_view_proj_gpu_buffer = lx_gpu_create_buffer(renderer->device, (sizeof(lx_mat4_t) * 3), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    VkDescriptorSet *model_view_proj_descriptor_set = lx_array_at(renderer->render_pipeline->descriptor_sets, 0);
-
+    renderer->model_view_proj_gpu_buffer = lx_gpu_create_buffer(renderer->device, (sizeof(lx_mat4_t) * 3), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    
     VkDescriptorBufferInfo descriptor_buffer_info = { 0 };
     descriptor_buffer_info.buffer = renderer->model_view_proj_gpu_buffer->handle;
     descriptor_buffer_info.offset = 0;
@@ -1058,7 +1093,7 @@ void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene)
     write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write_descriptor_set.descriptorCount = 1;
     write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    write_descriptor_set.dstSet = *model_view_proj_descriptor_set;
+    write_descriptor_set.dstSet = renderer->render_pipeline->descriptor_set;
     write_descriptor_set.dstBinding = 0;
     write_descriptor_set.dstArrayElement = 0;
     write_descriptor_set.pBufferInfo = &descriptor_buffer_info;

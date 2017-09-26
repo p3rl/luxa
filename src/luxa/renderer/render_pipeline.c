@@ -35,7 +35,7 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     layout->rasterization_state.rasterizerDiscardEnable = VK_FALSE;
     layout->rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
     layout->rasterization_state.lineWidth = 1.0f;
-    layout->rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
+    layout->rasterization_state.cullMode = VK_CULL_MODE_NONE;
     layout->rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE;
     layout->rasterization_state.depthBiasEnable = VK_FALSE;
 
@@ -270,12 +270,8 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
             .allocator = layout->allocator,
             .handle = pipeline_handle,
             .descriptor_pool = descriptor_pool,
-            .descriptor_sets = lx_array_create(layout->allocator, sizeof(VkDescriptorSet))
+            .descriptor_set = descriptor_set
         };
-
-        if (descriptor_set != VK_NULL_HANDLE) {
-            lx_array_push_back((*pipeline)->descriptor_sets, &descriptor_set);
-        }
     }
 
     lx_free(layout->allocator, shader_stages);

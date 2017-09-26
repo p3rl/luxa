@@ -4,6 +4,7 @@
 #include <luxa/collections/buffer.h>
 #include <luxa/math/math.h>
 #include <luxa/renderer/scene.h>
+#include <luxa/renderer/camera.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +27,7 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
 void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer);
 
-void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene);
+void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_camera_t *camera);
 
 void lx_renderer_initialize_scene(lx_renderer_t *renderer, lx_scene_t *scene);
 

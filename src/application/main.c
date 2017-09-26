@@ -9,8 +9,10 @@
 #include <luxa/fs.h>
 #include <luxa/renderer/scene.h>
 #include <luxa/renderer/mesh.h>
+#include <luxa/renderer/camera.h>
 
 lx_renderer_t *renderer = NULL;
+lx_camera_t *camera = NULL;
 
 void debug_log(time_t time, lx_log_level_t log_level, const char* tag, const char *message, void *user_data)
 {
@@ -104,62 +106,48 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
     lx_mesh_t *mesh = lx_mesh_create(allocator);
     
-    //float size = 1.0f;
+    float size = 1.0f;
 
-    //lx_vec3_t vertices[] =
-    //{ 
-    //    // Bottom
-    //    { 0.0f, 0.0f, 0.0f },
-    //    { size, 0.0f, 0.0f },
-    //    { size, size, 0.9f },
-    //    { 0.0f, size, 0.9f },
-
-    //    // Top
-    //    { 0.0f, 0.0f, size },
-    //    { size, 0.0f, size },
-    //    { size, size, size },
-    //    { 0.0f, size, size },
-    //};
-
-    //uint32_t indices[] =
-    //{
-    //    // Front
-    //    0, 4, 5,
-    //    0, 5, 1,
-
-    //    // Right
-    //    1, 5, 6,
-    //    1, 6, 2,
-
-    //    // Back
-    //    2, 6, 7,
-    //    2, 7, 3,
-
-    //    // Left
-    //    3, 7, 4,
-    //    3, 4, 0,
-
-    //    // Top
-    //    4, 7, 6,
-    //    4, 6, 5,
-
-    //    // Bottom
-    //    3, 0, 1,
-    //    3, 1, 2,
-    //};
-
-    lx_vec2_t vertices[] =
+    lx_vec3_t vertices[] =
     { 
-        { -0.5f, -0.5f },
-        {  0.5f, -0.5f },
-        {  0.5f,  0.5f },
-        { -0.5f,  0.5f },
+        // Bottom
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0,  0.0f, size },
+        { size, 0.0f, size },
+        { size, 0.0f, 0.0f },
+
+        // Top
+        { 0.0f, size, 0.0f },
+        { 0.0,  size, size },
+        { size, size, size },
+        { size, size, 0.0f },
     };
 
     uint32_t indices[] =
     {
-        0, 1, 2,
-        2, 3, 0
+        // Front
+        0, 4, 7,
+        0, 7, 3,
+
+        //// Right
+        1, 7, 6,
+        1, 6, 2,
+
+        // Back
+        2, 6, 5,
+        2, 5, 1,
+
+        //// Left
+        1, 5, 4,
+        1, 4, 0,
+
+        //// Top
+        4, 5, 6,
+        4, 6, 7,
+
+        //// Bottom
+        2, 3, 0,
+        2, 0, 1,
     };
 
     lx_mesh_set_vertices(mesh, vertices, sizeof(vertices)/ sizeof(vertices[0]));
@@ -172,6 +160,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
     lx_renderer_initialize_scene(renderer, scene);
 
+    camera = lx_camera_create(allocator);
+    lx_camera_set_projection(camera, 0.1f, 10.0f, lx_radians(45.0f));
+
+    lx_vec3_t camera_pos = { 3.0, 0.0, -5.0 };
+    lx_vec3_t camera_target = { 0, 0, 0 };
+    lx_vec3_t camera_up = { 0, 1.0f, 0 };
+    lx_camera_look_at(camera, &camera_target, &camera_pos, &camera_up);
+
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
 
@@ -180,7 +176,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 
-		lx_renderer_render_frame(renderer, scene);
+		lx_renderer_render_frame(renderer, scene, camera);
 		lx_renderer_device_wait_idle(renderer);
 	}
 

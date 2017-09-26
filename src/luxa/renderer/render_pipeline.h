@@ -29,7 +29,7 @@ typedef struct lx_render_pipeline {
     lx_allocator_t *allocator;
     VkPipeline handle;
     VkDescriptorPool descriptor_pool;
-    lx_array_t *descriptor_sets;
+    VkDescriptorSet descriptor_set;
 } lx_render_pipeline_t;
 
 lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *allocator);

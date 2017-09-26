@@ -175,11 +175,12 @@ static LX_INLINE void lx_vec3_add(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec
     out->z = a->z + b->z;
 }
 
-static LX_INLINE void lx_vec3_sub(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
+LX_INLINE lx_vec3_t *lx_vec3_sub(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
 {
     out->x = a->x - b->x;
     out->y = a->y - b->y;
     out->z = a->z - b->z;
+    return out;
 }
 
 static LX_INLINE void lx_vec3_mul(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
@@ -208,11 +209,12 @@ static LX_INLINE float lx_vec3_dot(const lx_vec3_t *a, const lx_vec3_t *b)
     return a->x * b->x + a->y * b->y + a->z * b->z;
 }
 
-static LX_INLINE void lx_vec3_cross(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
+static LX_INLINE lx_vec3_t *lx_vec3_cross(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
 {
     out->x = a->y * b->z - a->z * b->y;
     out->y = a->z * b->x - a->x * b->z;
     out->z = a->x * b->y - a->y * b->x;
+    return out;
 }
 
 static LX_INLINE float lx_vec3_squared_length(const lx_vec3_t *v)
@@ -225,14 +227,14 @@ static LX_INLINE float lx_vec3_length(const lx_vec3_t *v)
     return lx_sqrtf(lx_vec3_squared_length(v));
 }
 
-static LX_INLINE void lx_vec3_normalize(const lx_vec3_t *v, lx_vec3_t *out)
+static LX_INLINE void lx_vec3_normalize(lx_vec3_t *v)
 {
     float length = lx_vec3_squared_length(v);
     if (length > 0.0f) {
         float s = 1.0f / lx_sqrtf(length);
-        out->x = v->x * s;
-        out->y = v->y * s;
-        out->z = v->z * s;
+        v->x *= s;
+        v->y *= s;
+        v->z *= s;
     }
 }
 
@@ -605,6 +607,27 @@ static LX_INLINE void lx_mat4_set_projection_fov(float near_plane, float far_pla
     out->m42 = 0.0f;
     out->m43 = -range * near_plane;
     out->m44 = 0.0f;
+}
+
+static LX_INLINE lx_mat4_t *lx_mat4_look_at(const lx_vec3_t* at, const lx_vec3_t *eye, const lx_vec3_t *up, lx_mat4_t *out)
+{
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/bb205342(v=vs.85).aspx
+
+    lx_vec3_t x, y, z;
+    lx_vec3_normalize(lx_vec3_sub(at, eye, &z));
+    lx_vec3_normalize(lx_vec3_cross(up, &z, &x));
+    lx_vec3_cross(&z, &x, &y);
+
+    float dotx = lx_vec3_dot(&x, eye);
+    float doty = lx_vec3_dot(&y, eye);
+    float dotz = lx_vec3_dot(&z, eye);
+
+    out->m11 = x.x;   out->m12 = y.x;   out->m13 = z.x;   out->m14 = 0.0f;
+    out->m21 = x.y;   out->m22 = y.y;   out->m23 = z.y;   out->m24 = 0.0f;
+    out->m31 = x.z;   out->m32 = y.z;   out->m33 = z.z;   out->m34 = 0.0f;
+    out->m41 = -dotx; out->m42 = -doty; out->m43 = -dotz; out->m44 = 1.0f;
+
+    return out;
 }
 
 #ifdef __cplusplus

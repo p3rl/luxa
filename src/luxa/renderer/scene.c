@@ -147,3 +147,8 @@ lx_scene_render_data_t *lx_scene_render_data(lx_scene_t *scene, lx_renderable_t 
 {
     return lx_array_at(scene->render_data, renderable);
 }
+
+const lx_mat4_t *lx_scene_world_transform(const lx_scene_t *scene, lx_scene_node_t node)
+{
+    return &scene->transform[node];
+}

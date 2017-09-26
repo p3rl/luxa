@@ -70,6 +70,8 @@ lx_renderable_t lx_scene_renderable(lx_scene_t *scene, lx_scene_node_t node);
 
 lx_scene_render_data_t *lx_scene_render_data(lx_scene_t *scene, lx_renderable_t renderable);
 
+const lx_mat4_t *lx_scene_world_transform(const lx_scene_t *scene, lx_scene_node_t node);
+
 #ifdef __cplusplus
 }
 #endif
