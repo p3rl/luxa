@@ -69,6 +69,9 @@ typedef struct lx_extent2 {
 
 #define lx_degrees(radians) (radians * LX_180_OVER_PI)
 
+/*
+ * 2-D Vector.
+ */
 static LX_INLINE void lx_vec2_zero(lx_vec2_t *v)
 {
     *v = (lx_vec2_t) { 0 };
@@ -152,6 +155,9 @@ static LX_INLINE float lx_vec2_distance(const lx_vec2_t *a, const lx_vec2_t *b)
     return lx_sqrtf(lx_vec2_squared_distance(a, b));
 }
 
+/*
+ * 3-D Vector.
+ */
 static LX_INLINE void lx_vec3_zero(lx_vec3_t *v)
 {
     *v = (lx_vec3_t) { 0 };
@@ -243,6 +249,9 @@ static LX_INLINE float lx_vec3_distance(const lx_vec3_t *a, const lx_vec3_t *b)
     return lx_sqrtf(lx_vec3_squared_distance(a, b));
 }
 
+/*
+ * 4-D Vector.
+ */
 static LX_INLINE void lx_vec4_zero(lx_vec4_t *v)
 {
     *v = (lx_vec4_t) { 0 };
@@ -328,10 +337,274 @@ static LX_INLINE void lx_vec4_normalize(const lx_vec4_t *v, lx_vec4_t *out)
     }
 }
 
+/*
+ * 4-D Matrix
+ */
+
+static LX_INLINE void lx_mat4_zero(lx_mat4_t *m)
+{
+    *m = (lx_mat4_t) { 0 };
+}
+
 static LX_INLINE void lx_mat4_identity(lx_mat4_t *m)
 {
     *m = (lx_mat4_t) { 0 };
     m->m11 = m->m22 = m->m33 = m->m44 = 1.0f;
+}
+
+static LX_INLINE void lx_mat4_add(const lx_mat4_t *a, const lx_mat4_t *b, lx_mat4_t *out)
+{
+    out->m11 = a->m11 + b->m11; out->m12 = a->m12 + b->m13; out->m13 = a->m13 + b->m13; out->m14 = a->m14 + b->m14;
+    out->m21 = a->m21 + b->m21; out->m22 = a->m22 + b->m23; out->m23 = a->m23 + b->m23; out->m24 = a->m24 + b->m24;
+    out->m31 = a->m31 + b->m31; out->m32 = a->m32 + b->m33; out->m33 = a->m33 + b->m33; out->m34 = a->m34 + b->m34;
+    out->m41 = a->m41 + b->m41; out->m42 = a->m42 + b->m43; out->m43 = a->m43 + b->m43; out->m44 = a->m44 + b->m44;
+}
+
+static LX_INLINE void lx_mat4_sub(const lx_mat4_t *a, const lx_mat4_t *b, lx_mat4_t *out)
+{
+    out->m11 = a->m11 - b->m11; out->m12 = a->m12 - b->m13; out->m13 = a->m13 - b->m13; out->m14 = a->m14 - b->m14;
+    out->m21 = a->m21 - b->m21; out->m22 = a->m22 - b->m23; out->m23 = a->m23 - b->m23; out->m24 = a->m24 - b->m24;
+    out->m31 = a->m31 - b->m31; out->m32 = a->m32 - b->m33; out->m33 = a->m33 - b->m33; out->m34 = a->m34 - b->m34;
+    out->m41 = a->m41 - b->m41; out->m42 = a->m42 - b->m43; out->m43 = a->m43 - b->m43; out->m44 = a->m44 - b->m44;
+}
+
+static LX_INLINE void lx_mat4_mul(const lx_mat4_t *a, const lx_mat4_t *b, lx_mat4_t *out)
+{
+    out->m11 = a->m11 * b->m11 + a->m12 * b->m21 + a->m13 * b->m31 + a->m14 * b->m41;
+    out->m12 = a->m11 * b->m12 + a->m12 * b->m22 + a->m13 * b->m32 + a->m14 * b->m42;
+    out->m13 = a->m11 * b->m13 + a->m12 * b->m23 + a->m13 * b->m33 + a->m14 * b->m43;
+    out->m14 = a->m11 * b->m14 + a->m12 * b->m24 + a->m13 * b->m34 + a->m14 * b->m44;
+
+    out->m21 = a->m21 * b->m11 + a->m22 * b->m21 + a->m23 * b->m31 + a->m24 * b->m41;
+    out->m22 = a->m21 * b->m12 + a->m22 * b->m22 + a->m23 * b->m32 + a->m24 * b->m42;
+    out->m23 = a->m21 * b->m13 + a->m22 * b->m23 + a->m23 * b->m33 + a->m24 * b->m43;
+    out->m24 = a->m21 * b->m14 + a->m22 * b->m24 + a->m23 * b->m34 + a->m24 * b->m44;
+
+    out->m31 = a->m31 * b->m11 + a->m32 * b->m21 + a->m33 * b->m31 + a->m34 * b->m41;
+    out->m32 = a->m31 * b->m12 + a->m32 * b->m22 + a->m33 * b->m32 + a->m34 * b->m42;
+    out->m33 = a->m31 * b->m13 + a->m32 * b->m23 + a->m33 * b->m33 + a->m34 * b->m43;
+    out->m34 = a->m31 * b->m14 + a->m32 * b->m24 + a->m33 * b->m34 + a->m34 * b->m44;
+
+    out->m41 = a->m41 * b->m11 + a->m42 * b->m21 + a->m43 * b->m31 + a->m44 * b->m41;
+    out->m42 = a->m41 * b->m12 + a->m42 * b->m22 + a->m43 * b->m32 + a->m44 * b->m42;
+    out->m43 = a->m41 * b->m13 + a->m42 * b->m23 + a->m43 * b->m33 + a->m44 * b->m43;
+    out->m44 = a->m41 * b->m14 + a->m42 * b->m24 + a->m43 * b->m34 + a->m44 * b->m44;
+}
+
+static LX_INLINE void lx_mat4_scale(const lx_mat4_t *m, float s, lx_mat4_t *out)
+{
+    for (size_t i = 0; i < 16; ++i)
+        out->m[i] = m->m[i] * s;
+}
+
+static LX_INLINE void lx_mat4_transpose(const lx_mat4_t *m, lx_mat4_t *out)
+{
+    out->m11 = m->m11; out->m12 = m->m21; out->m13 = m->m31; out->m14 = m->m41;
+    out->m21 = m->m12; out->m22 = m->m22; out->m23 = m->m32; out->m24 = m->m42;
+    out->m31 = m->m13; out->m32 = m->m23; out->m33 = m->m33; out->m34 = m->m43;
+    out->m41 = m->m14; out->m42 = m->m24; out->m43 = m->m34; out->m44 = m->m44;
+}
+
+static LX_INLINE float lx_mat4_det(const lx_mat4_t *m)
+{
+    float m33_x_m44_minus_m34_x_m43 = m->m33 * m->m44 - m->m34 * m->m43;
+    float m23_x_m44_minus_m24_x_m43 = m->m23 * m->m44 - m->m24 * m->m43;
+    float m23_x_m34_minus_m24_x_m33 = m->m23 * m->m34 - m->m24 * m->m33;
+    float m13_x_m34_minus_m14_x_m33 = m->m13 * m->m34 - m->m14 * m->m33;
+    float m13_x_m44_minus_m14_x_m43 = m->m13 * m->m44 - m->m14 * m->m43;
+    float m13_x_m24_minus_m14_x_m23 = m->m13 * m->m24 - m->m14 * m->m23;
+
+    return
+        m->m11 * (m->m22 * (m33_x_m44_minus_m34_x_m43)
+            -m->m32 * (m23_x_m44_minus_m24_x_m43)
+            +m->m42 * (m23_x_m34_minus_m24_x_m33))
+
+        - m->m21 * (m->m12 * (m33_x_m44_minus_m34_x_m43)
+            -m->m32 * (m13_x_m44_minus_m14_x_m43)
+            +m->m42 * (m13_x_m34_minus_m14_x_m33))
+
+        + m->m31 * (m->m12 * (m23_x_m44_minus_m24_x_m43)
+            -m->m22 * (m13_x_m44_minus_m14_x_m43)
+            +m->m42 * (m13_x_m24_minus_m14_x_m23))
+
+        - m->m41 * (m->m12 * (m23_x_m34_minus_m24_x_m33)
+            -m->m22 * (m13_x_m34_minus_m14_x_m33)
+            +m->m32 * (m13_x_m24_minus_m14_x_m23));
+}
+
+static LX_INLINE float lx_mat4_det3(const lx_mat4_t *m)
+{
+    return m->m11 * (m->m22 * m->m33 - m->m32 * m->m23)
+         - m->m12 * (m->m21 * m->m33 - m->m31 * m->m23)
+         + m->m13 * (m->m21 * m->m32 - m->m31 * m->m22);
+}
+
+static LX_INLINE bool lx_mat4_inv3(const lx_mat4_t *m, lx_mat4_t *out)
+{
+    float det = lx_mat4_det3(m);
+
+    if (fabsf(det) < LX_MAT_INVERSE_EPSILON) {
+        return false;
+    }
+
+    float one_over_det = 1.0f / det;
+
+    out->m11 = one_over_det * (m->m22*m->m33 - m->m23*m->m32);
+    out->m12 = one_over_det * (m->m13*m->m32 - m->m12*m->m33);
+    out->m13 = one_over_det * (m->m12*m->m23 - m->m13*m->m22);
+
+    out->m21 = one_over_det * (m->m23*m->m31 - m->m21*m->m33);
+    out->m22 = one_over_det * (m->m11*m->m33 - m->m13*m->m31);
+    out->m23 = one_over_det * (m->m13*m->m21 - m->m11*m->m23);
+
+    out->m31 = one_over_det * (m->m21*m->m32 - m->m22*m->m31);
+    out->m32 = one_over_det * (m->m12*m->m31 - m->m11*m->m32);
+    out->m33 = one_over_det * (m->m11*m->m22 - m->m12*m->m21);
+
+    return true;
+}
+
+static LX_INLINE float lx_mat4_trace(const lx_mat4_t *m)
+{
+    return m->m11 + m->m22 + m->m33 + m->m44;
+}
+
+static LX_INLINE void lx_mat4_set_rotation_x(float angle, lx_mat4_t *out)
+{
+    float sa = sinf(angle);
+    float ca = cosf(angle);
+
+    out->m11 = 1.0f; out->m12 = 0.0f; out->m13 = 0.0f; out->m14 = 0.0f;
+    out->m21 = 0.0f; out->m22 = ca;	  out->m23 = sa;   out->m24 = 0.0f;
+    out->m31 = 0.0f; out->m32 = -sa;  out->m33 = ca;   out->m34 = 0.0f;
+    out->m41 = 0.0f; out->m42 = 0.0f; out->m43 = 0.0f; out->m44 = 1.0f;
+}
+
+static LX_INLINE void lx_mat4_set_rotation_y(float angle, lx_mat4_t *out)
+{
+    float sa = sinf(angle);
+    float ca = cosf(angle);
+
+    out->m11 = ca;   out->m12 = 0.0f; out->m13 = -sa;  out->m14 = 0.0f;
+    out->m21 = 0.0f; out->m22 = 1.0;  out->m23 = 0.0;  out->m24 = 0.0f;
+    out->m31 = sa;   out->m32 = 0.0;  out->m33 = ca;   out->m34 = 0.0f;
+    out->m41 = 0.0f; out->m42 = 0.0f; out->m43 = 0.0f; out->m44 = 1.0f;
+}
+
+static LX_INLINE void lx_mat4_set_rotation_z(float angle, lx_mat4_t *out)
+{
+    float sa = sinf(angle);
+    float ca = cosf(angle);
+
+    out->m11 = ca;   out->m12 = sa;   out->m13 = 0.0f; out->m14 = 0.0f;
+    out->m21 = -sa;  out->m22 = ca;   out->m23 = 0.0f; out->m24 = 0.0f;
+    out->m31 = 0.0f; out->m32 = 0.0f; out->m33 = 1.0f; out->m34 = 0.0f;
+    out->m41 = 0.0f; out->m42 = 0.0f; out->m43 = 0.0f; out->m44 = 1.0f;
+}
+
+/*
+ * Set rotation y (yaw), x (pitch) and z (roll).
+ */
+static LX_INLINE void lx_mat4_set_rotation_yxz(float angle_y, float angle_x, float angle_z, lx_mat4_t *out)
+{
+    float sy = sinf(angle_y);
+    float cy = cosf(angle_y);
+    float sx = sinf(angle_x);
+    float cx = cosf(angle_x);
+    float sz = sinf(angle_z);
+    float cz = cosf(angle_z);
+
+    float sy_x_sx = sy*sx;
+    float cy_x_sx = cy*sx;
+
+    out->m11 = cy*cz - sy_x_sx*sz;
+    out->m12 = cy*sz + sy_x_sx*cz;
+    out->m13 = -sy*cx;
+    out->m14 = 0.0f;
+
+    out->m21 = -cx*sz;
+    out->m22 = cx*cz;
+    out->m23 = sx;
+    out->m24 = 0.0f;
+
+    out->m31 = sy*cz + cy_x_sx*sz;
+    out->m32 = sy*sz - cy_x_sx*cz;
+    out->m33 = cy*cx;
+    out->m34 = 0.0f;
+
+    out->m41 = 0.0f;
+    out->m42 = 0.0f;
+    out->m43 = 0.0f;
+    out->m44 = 1.0f;
+}
+
+static LX_INLINE void lx_mat4_set_translation(float x, float y, float z, lx_mat4_t *out)
+{
+    out->m11 = 1.0f; out->m12 = 0.0f; out->m13 = 0.0f; out->m14 = 0.0f;
+    out->m21 = 0.0f; out->m22 = 1.0f; out->m23 = 0.0f; out->m24 = 0.0f;
+    out->m31 = 0.0f; out->m32 = 0.0f; out->m33 = 1.0f; out->m34 = 0.0f;
+    out->m41 = x;    out->m42 = y;    out->m43 = z;    out->m44 = 1.0f;
+}
+
+static LX_INLINE void lx_mat4_set_translation_from_vec3(const lx_vec3_t *v, lx_mat4_t *out)
+{
+    lx_mat4_set_translation(v->x, v->y, v->z, out);
+}
+
+static LX_INLINE void lx_mat4_set_projection(float near_plane, float far_plane, float width, float height, lx_mat4_t *out)
+{
+    float two_near = near_plane + near_plane;
+    float range = far_plane / (far_plane - near_plane);
+
+    out->m11 = two_near / width;
+    out->m12 = 0.0f;
+    out->m13 = 0.0f;
+    out->m14 = 0.0f;
+
+    out->m21 = 0.0f;
+    out->m22 = two_near / height;
+    out->m23 = 0.0f;
+    out->m24 = 0.0f;
+
+    out->m31 = 0.0f;
+    out->m32 = 0.0f;
+    out->m33 = range;
+    out->m34 = 1.0f;
+
+    out->m41 = 0.0f;
+    out->m42 = 0.0f;
+    out->m43 = -range * near_plane;
+    out->m44 = 0.0f;
+}
+
+static LX_INLINE void lx_mat4_set_projection_fov(float near_plane, float far_plane, float fov_y, float aspect_ratio, lx_mat4_t *out)
+{
+    float half_fov = 0.5f * fov_y;
+    float sf = sinf(half_fov);
+    float cf = cosf(half_fov);
+    float height = cf / sf;
+    float width = height / aspect_ratio;
+    float range = far_plane / (far_plane - near_plane);
+
+    out->m11 = width;
+    out->m12 = 0.0f;
+    out->m13 = 0.0f;
+    out->m14 = 0.0f;
+
+    out->m21 = 0.0f;
+    out->m22 = height;
+    out->m23 = 0.0f;
+    out->m24 = 0.0f;
+
+    out->m31 = 0.0f;
+    out->m32 = 0.0f;
+    out->m33 = range;
+    out->m34 = 1.0f;
+
+    out->m41 = 0.0f;
+    out->m42 = 0.0f;
+    out->m43 = -range * near_plane;
+    out->m44 = 0.0f;
 }
 
 #ifdef __cplusplus
