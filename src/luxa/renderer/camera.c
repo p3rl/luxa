@@ -33,7 +33,6 @@ void lx_camera_look_to(lx_camera_t *camera, lx_vec3_t *direction, lx_vec3_t *pos
 
 void lx_camera_look_at(lx_camera_t *camera, lx_vec3_t *target, lx_vec3_t *position, lx_vec3_t *up)
 {
-    lx_vec3_t neg_eye_dir;
-    lx_vec3_sub(position, target, &neg_eye_dir);
-    lx_camera_look_to(camera, &neg_eye_dir, position, up);
+    lx_vec3_t dir;
+    lx_camera_look_to(camera, lx_vec3_sub(target, position, &dir), position, up);
 }

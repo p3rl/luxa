@@ -544,7 +544,7 @@ static lx_result_t create_command_pool(lx_renderer_t *renderer, uint32_t queue_f
 	VkCommandPoolCreateInfo create_info = { 0 };
 	create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	create_info.queueFamilyIndex = queue_family_index;
-	create_info.flags = 0;
+	create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	if (vkCreateCommandPool(renderer->device->handle, &create_info, NULL, &command_pool->handle) != VK_SUCCESS) {
 		lx_free(renderer->allocator, command_pool);
@@ -824,141 +824,132 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
 void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_camera_t *camera)
 {
-	if (renderer->record_command_buffer) {
-        
-        lx_mat4_t model_view_proj[3];
-        lx_mat4_identity(&model_view_proj[0]);
-        lx_mat4_identity(&model_view_proj[1]);
-        lx_mat4_identity(&model_view_proj[2]);
+    // Acquire image
+    uint32_t image_index;
+    VkResult result = vkAcquireNextImageKHR(renderer->device->handle, renderer->swap_chain->handle, INTMAX_MAX, renderer->semaphore_image_available, VK_NULL_HANDLE, &image_index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        LX_LOG_ERROR(LOG_TAG, "VK_ERROR_OUT_OF_DATE_KHR!");
+        return;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to acquire swap chain image!");
+        return;
+    }
 
-        float aspect_ratio = ((float)renderer->swap_chain->extent.width / (float)renderer->swap_chain->extent.height);
-        lx_mat4_look_at(&(lx_vec3_t) { 0 }, &camera->position, &camera->up, &model_view_proj[1]);
-        lx_mat4_set_projection_fov(camera->near_plane, camera->far_plane, camera->fov, aspect_ratio, &model_view_proj[2]);
-        
-        // Record command buffers
-		for (uint32_t i = 0; i < lx_array_size(renderer->command_pool->command_buffers); ++i) {
-			VkCommandBufferBeginInfo buffer_begin_info = { 0 };
-			buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-			buffer_begin_info.pInheritanceInfo = NULL; // Optional
+    lx_mat4_t model_view_proj[3];
+    lx_mat4_identity(&model_view_proj[0]);
+    lx_mat4_identity(&model_view_proj[1]);
+    lx_mat4_identity(&model_view_proj[2]);
 
-			VkCommandBuffer *cb = lx_array_at(renderer->command_pool->command_buffers, i);
-			vkBeginCommandBuffer(*cb, &buffer_begin_info);
+    float aspect_ratio = ((float)renderer->swap_chain->extent.width / (float)renderer->swap_chain->extent.height);
+    lx_mat4_look_to(&camera->direction, &camera->position, &camera->up, &model_view_proj[1]);
+    lx_mat4_set_projection_fov(camera->near_plane, camera->far_plane, camera->fov, aspect_ratio, &model_view_proj[2]);
 
-			frame_buffer_t *fb = lx_array_at(renderer->frame_buffers, i);
-			VkRenderPassBeginInfo render_pass_begin_info = { 0 };
-			render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			render_pass_begin_info.renderPass = renderer->render_pass;
-			render_pass_begin_info.framebuffer = fb->handle;
+    VkCommandBuffer *command_buffer = lx_array_at(renderer->command_pool->command_buffers, image_index);
+    VkCommandBufferBeginInfo buffer_begin_info = { 0 };
+    buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
-			render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
-			render_pass_begin_info.renderArea.extent = renderer->swap_chain->extent;
+    // Start recording
+    vkBeginCommandBuffer(*command_buffer, &buffer_begin_info);
+    frame_buffer_t *fb = lx_array_at(renderer->frame_buffers, image_index);
 
-			VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
-			render_pass_begin_info.clearValueCount = 1;
-			render_pass_begin_info.pClearValues = &clear_color;
+    VkRenderPassBeginInfo render_pass_begin_info = { 0 };
+    render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_begin_info.renderPass = renderer->render_pass;
+    render_pass_begin_info.framebuffer = fb->handle;
 
-			vkCmdBeginRenderPass(*cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
+    render_pass_begin_info.renderArea.extent = renderer->swap_chain->extent;
 
-			    vkCmdBindPipeline(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
+    VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
+    render_pass_begin_info.clearValueCount = 1;
+    render_pass_begin_info.pClearValues = &clear_color;
 
-                // Draw meshes
-                const size_t scene_size = lx_scene_size(scene);
-                for (lx_scene_node_t node = 1; node < scene_size; ++node) {
-                    lx_renderable_t renderable = lx_scene_renderable(scene, node);
+    // Begin render pass
+    vkCmdBeginRenderPass(*command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
-                    if (!lx_is_some_renderable(renderable))
-                        continue;
+    // Draw meshes
+    vkCmdBindPipeline(*command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline->handle);
+    const size_t scene_size = lx_scene_size(scene);
+    for (lx_scene_node_t node = 1; node < scene_size; ++node) {
+        lx_renderable_t renderable = lx_scene_renderable(scene, node);
 
-                    lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
-                    if (!rd)
-                        continue;
+        if (!lx_is_some_renderable(renderable))
+            continue;
 
-                    model_view_proj[0] = *lx_scene_world_transform(scene, node);
-                    lx_gpu_buffer_copy_data(renderer->device, renderer->model_view_proj_gpu_buffer, model_view_proj);
+        lx_scene_render_data_t *rd = lx_scene_render_data(scene, renderable);
+        if (!rd)
+            continue;
 
-                    lx_mesh_t *mesh = rd->data;
-                    lx_gpu_buffer_t *vertex_buffer = lx_mesh_vertex_buffer(mesh);
-                    lx_gpu_buffer_t *index_buffer = lx_mesh_index_buffer(mesh);
+        model_view_proj[0] = *lx_scene_world_transform(scene, node);
+        lx_gpu_buffer_copy_data(renderer->device, renderer->model_view_proj_gpu_buffer, model_view_proj);
 
-                    VkBuffer buffers[] = { vertex_buffer->handle };
-                    VkDeviceSize offsets[] = { 0 };
-                    vkCmdBindVertexBuffers(*cb, 0, 1, buffers, offsets);
-                    vkCmdBindIndexBuffer(*cb, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
-                    vkCmdBindDescriptorSets(*cb, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline_layout->handle, 0, 1, &renderer->render_pipeline->descriptor_set, 0, NULL);
-                    
-                    size_t num_indices = (uint32_t)lx_mesh_num_indices(mesh);
-                    size_t num_triangles = num_indices / 3;
-                    vkCmdDrawIndexed(*cb, num_indices, num_triangles, 0, 0, 0);
-                }
+        lx_mesh_t *mesh = rd->data;
+        lx_gpu_buffer_t *vertex_buffer = lx_mesh_vertex_buffer(mesh);
+        lx_gpu_buffer_t *index_buffer = lx_mesh_index_buffer(mesh);
 
-			vkCmdEndRenderPass(*cb);
+        VkBuffer buffers[] = { vertex_buffer->handle };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(*command_buffer, 0, 1, buffers, offsets);
+        vkCmdBindIndexBuffer(*command_buffer, index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindDescriptorSets(*command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->render_pipeline_layout->handle, 0, 1, &renderer->render_pipeline->descriptor_set, 0, NULL);
 
-			if (vkEndCommandBuffer(*cb) != VK_SUCCESS) {
-				LX_LOG_ERROR(LOG_TAG, "Failed to record command buffer");
-				return;
-			}
-		}
+        uint32_t num_indices = (uint32_t)lx_mesh_num_indices(mesh);
+        uint32_t num_triangles = (uint32_t)num_indices / 3;
+        vkCmdDrawIndexed(*command_buffer, num_indices, num_triangles, 0, 0, 0);
+    }
 
-		renderer->record_command_buffer = false;
-	}
+    // End render pass
+    vkCmdEndRenderPass(*command_buffer);
 
-	vkQueueWaitIdle(renderer->device->presentation_queue);
-	
-	// Acquire image
-	uint32_t image_index;
-	VkResult result = vkAcquireNextImageKHR(renderer->device->handle, renderer->swap_chain->handle, INTMAX_MAX, renderer->semaphore_image_available, VK_NULL_HANDLE, &image_index);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		//lx_renderer_reset_swap_chain(renderer, 1, 2);
-		return;
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to acquire swap chain image!");
-		return;
-	}
+    // Stop recording
+    if (vkEndCommandBuffer(*command_buffer) != VK_SUCCESS) {
+        LX_LOG_ERROR(LOG_TAG, "Failed to record command buffer");
+        return;
+    }
 
+    // Submit frame
+    VkSubmitInfo submit_info = { 0 };
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkSubmitInfo submit_info = { 0 };
-	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    VkSemaphore wait_semaphores[] = { renderer->semaphore_image_available };
+    VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
 
-	VkSemaphore wait_semaphores[] = { renderer->semaphore_image_available };
-	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	submit_info.waitSemaphoreCount = 1;
-	submit_info.pWaitSemaphores = wait_semaphores;
-	submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = command_buffer;
 
-	VkCommandBuffer *cmd_buffer = lx_array_at(renderer->command_pool->command_buffers, image_index);
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = cmd_buffer;
+    VkSemaphore signals[] = { renderer->semaphore_render_finished };
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signals;
 
-	VkSemaphore signals[] = { renderer->semaphore_render_finished };
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = signals;
+    result = vkQueueSubmit(renderer->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+    if (result != VK_SUCCESS) {
+    	LX_LOG_ERROR(LOG_TAG, "Failed to sumbit draw command buffer (Error: %d)", result);
+    	return;
+    }
 
-	result = vkQueueSubmit(renderer->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
-	if (result != VK_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to sumbit draw command buffer (Error: %d)", result);
-		return;
-	}
+    // Present frame
+    VkPresentInfoKHR present_info = { 0 };
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = signals;
 
-	// Presentation	
-	VkPresentInfoKHR present_info = { 0 };
-	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = 1;
-	present_info.pWaitSemaphores = signals;
+    VkSwapchainKHR swap_chains[] = { renderer->swap_chain->handle };
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = swap_chains;
+    present_info.pImageIndices = &image_index;
 
-	VkSwapchainKHR swap_chains[] = { renderer->swap_chain->handle };
-	present_info.swapchainCount = 1;
-	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &image_index;
+    present_info.pResults = NULL; // Optional
 
-	present_info.pResults = NULL; // Optional
+    if (vkQueuePresentKHR(renderer->device->presentation_queue, &present_info) != VK_SUCCESS) {
+    	LX_LOG_ERROR(LOG_TAG, "Failed to present image");
+    }
 
-	if (vkQueuePresentKHR(renderer->device->presentation_queue, &present_info) != VK_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to present image");
-	}
-
-	vkQueueWaitIdle(renderer->device->presentation_queue);
+    vkQueueWaitIdle(renderer->device->presentation_queue);
 }
 
 void lx_renderer_device_wait_idle(lx_renderer_t *renderer)

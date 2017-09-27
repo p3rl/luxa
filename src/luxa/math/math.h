@@ -158,9 +158,11 @@ static LX_INLINE float lx_vec2_distance(const lx_vec2_t *a, const lx_vec2_t *b)
 /*
  * 3-D Vector.
  */
-static LX_INLINE void lx_vec3_zero(lx_vec3_t *v)
+static LX_INLINE lx_vec3_t *lx_vec3_zero(lx_vec3_t *v)
 {
     *v = (lx_vec3_t) { 0 };
+    
+    return v;
 }
 
 static LX_INLINE float lx_vec3_at(const lx_vec3_t *v, size_t i)
@@ -168,11 +170,22 @@ static LX_INLINE float lx_vec3_at(const lx_vec3_t *v, size_t i)
     return ((const float *)v)[i];
 }
 
-static LX_INLINE void lx_vec3_add(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
+static LX_INLINE lx_vec3_t *lx_vec3_inv(const lx_vec3_t *v, lx_vec3_t *out)
+{
+    out->x = -v->x;
+    out->y = -v->y;
+    out->z = -v->z;
+
+    return out;
+}
+
+static LX_INLINE lx_vec3_t *lx_vec3_add(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
 {
     out->x = a->x + b->x;
     out->y = a->y + b->y;
     out->z = a->z + b->z;
+
+    return out;
 }
 
 LX_INLINE lx_vec3_t *lx_vec3_sub(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
@@ -180,28 +193,35 @@ LX_INLINE lx_vec3_t *lx_vec3_sub(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3
     out->x = a->x - b->x;
     out->y = a->y - b->y;
     out->z = a->z - b->z;
+    
     return out;
 }
 
-static LX_INLINE void lx_vec3_mul(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
+static LX_INLINE lx_vec3_t *lx_vec3_mul(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
 {
     out->x = a->x * b->x;
     out->y = a->y * b->y;
     out->z = a->z * b->z;
+
+    return out;
 }
 
-static LX_INLINE void lx_vec3_div(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
+static LX_INLINE lx_vec3_t *lx_vec3_div(const lx_vec3_t *a, const lx_vec3_t *b, lx_vec3_t *out)
 {
     out->x = a->x / b->x;
     out->y = a->y / b->y;
     out->z = a->z / b->z;
+
+    return out;
 }
 
-static LX_INLINE void lx_vec3_scale(const lx_vec3_t *a, float s, lx_vec3_t *out)
+static LX_INLINE lx_vec3_t *lx_vec3_scale(const lx_vec3_t *a, float s, lx_vec3_t *out)
 {
     out->x = a->x * s;
     out->y = a->y * s;
     out->z = a->z * s;
+
+    return out;
 }
 
 static LX_INLINE float lx_vec3_dot(const lx_vec3_t *a, const lx_vec3_t *b)
@@ -227,7 +247,7 @@ static LX_INLINE float lx_vec3_length(const lx_vec3_t *v)
     return lx_sqrtf(lx_vec3_squared_length(v));
 }
 
-static LX_INLINE void lx_vec3_normalize(lx_vec3_t *v)
+static LX_INLINE lx_vec3_t *lx_vec3_normalize(lx_vec3_t *v)
 {
     float length = lx_vec3_squared_length(v);
     if (length > 0.0f) {
@@ -236,6 +256,14 @@ static LX_INLINE void lx_vec3_normalize(lx_vec3_t *v)
         v->y *= s;
         v->z *= s;
     }
+
+    return v;
+}
+
+static LX_INLINE lx_vec3_t *lx_vec3_normalize_to(const lx_vec3_t *v, lx_vec3_t *out)
+{
+    *out = *v;
+    return lx_vec3_normalize(out);
 }
 
 static LX_INLINE float lx_vec3_squared_distance(const lx_vec3_t *a, const lx_vec3_t *b)
@@ -609,18 +637,16 @@ static LX_INLINE void lx_mat4_set_projection_fov(float near_plane, float far_pla
     out->m44 = 0.0f;
 }
 
-static LX_INLINE lx_mat4_t *lx_mat4_look_at(const lx_vec3_t* at, const lx_vec3_t *eye, const lx_vec3_t *up, lx_mat4_t *out)
+static LX_INLINE lx_mat4_t *lx_mat4_look_to(const lx_vec3_t* dir, const lx_vec3_t *position, const lx_vec3_t *up, lx_mat4_t *out)
 {
-    // https://msdn.microsoft.com/en-us/library/windows/desktop/bb205342(v=vs.85).aspx
-
     lx_vec3_t x, y, z;
-    lx_vec3_normalize(lx_vec3_sub(at, eye, &z));
+    lx_vec3_normalize_to(dir, &z);
     lx_vec3_normalize(lx_vec3_cross(up, &z, &x));
     lx_vec3_cross(&z, &x, &y);
 
-    float dotx = lx_vec3_dot(&x, eye);
-    float doty = lx_vec3_dot(&y, eye);
-    float dotz = lx_vec3_dot(&z, eye);
+    float dotx = lx_vec3_dot(&x, position);
+    float doty = lx_vec3_dot(&y, position);
+    float dotz = lx_vec3_dot(&z, position);
 
     out->m11 = x.x;   out->m12 = y.x;   out->m13 = z.x;   out->m14 = 0.0f;
     out->m21 = x.y;   out->m22 = y.y;   out->m23 = z.y;   out->m24 = 0.0f;
@@ -628,6 +654,12 @@ static LX_INLINE lx_mat4_t *lx_mat4_look_at(const lx_vec3_t* at, const lx_vec3_t
     out->m41 = -dotx; out->m42 = -doty; out->m43 = -dotz; out->m44 = 1.0f;
 
     return out;
+}
+
+static LX_INLINE lx_mat4_t *lx_mat4_look_at(const lx_vec3_t* target, const lx_vec3_t *position, const lx_vec3_t *up, lx_mat4_t *out)
+{
+    lx_vec3_t z;
+    return lx_mat4_look_to(lx_vec3_sub(target, position, &z), position, up, out);
 }
 
 #ifdef __cplusplus
