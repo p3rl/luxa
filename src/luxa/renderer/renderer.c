@@ -499,19 +499,35 @@ static lx_result_t create_render_pass(lx_renderer_t *renderer)
 	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+	VkAttachmentDescription depth_buffer_attachment = { 0 };
+	depth_buffer_attachment.format = get_depth_buffer_format(renderer->device);
+	depth_buffer_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_buffer_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth_buffer_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_buffer_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depth_buffer_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_buffer_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth_buffer_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 	VkAttachmentReference color_attachment_ref = { 0 };
 	color_attachment_ref.attachment = 0;
 	color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depth_attachment_ref = { 0 };
+	depth_attachment_ref.attachment = 1;
+	depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkSubpassDescription subpass = { 0 };
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &color_attachment_ref;
+	subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
+	VkAttachmentDescription attachments[] = { color_attachment , depth_buffer_attachment };
 	VkRenderPassCreateInfo render_pass_create_info = { 0 };
 	render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_create_info.attachmentCount = 1;
-	render_pass_create_info.pAttachments = &color_attachment;
+	render_pass_create_info.attachmentCount = 2;
+	render_pass_create_info.pAttachments = attachments;
 	render_pass_create_info.subpassCount = 1;
 	render_pass_create_info.pSubpasses = &subpass;
 
@@ -686,12 +702,12 @@ static lx_result_t create_frame_buffers(lx_renderer_t *renderer)
 	renderer->frame_buffers = lx_array_create(renderer->allocator, sizeof(frame_buffer_t));
 
 	lx_array_for(VkImageView, iv, renderer->swap_chain->image_views) {
-		VkImageView attachments[] = { *iv };
+		VkImageView attachments[] = { *iv, renderer->depth_buffer->image_view };
 
 		VkFramebufferCreateInfo frame_buffer_create_info = { 0 };
 		frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frame_buffer_create_info.renderPass = renderer->render_pass;
-		frame_buffer_create_info.attachmentCount = 1;
+		frame_buffer_create_info.attachmentCount = 2;
 		frame_buffer_create_info.pAttachments = attachments;
 		frame_buffer_create_info.width = renderer->swap_chain->extent.width;
 		frame_buffer_create_info.height = renderer->swap_chain->extent.height;
@@ -877,13 +893,6 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Render pass [OK]");
-	
-	if (create_frame_buffers(vulkan_renderer) != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed create to frame buffers");
-		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
-		return LX_ERROR;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 
 	if (create_command_pool(vulkan_renderer, vulkan_renderer->device->gpu->graphics_queue_family_index) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool");
@@ -892,7 +901,7 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Command pool [OK]");
 
-	if (create_command_pool_buffers(vulkan_renderer, vulkan_renderer->command_pool, lx_array_size(vulkan_renderer->frame_buffers)) != LX_SUCCESS) {
+	if (create_command_pool_buffers(vulkan_renderer, vulkan_renderer->command_pool, lx_array_size(vulkan_renderer->swap_chain->images)) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool buffers");
 		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
 		return LX_ERROR;
@@ -905,6 +914,13 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Depth buffer [OK]");
+
+	if (create_frame_buffers(vulkan_renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed create to frame buffers");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 	 
 	// Create semaphore(s)
 	if (lx_gpu_create_semaphore(vulkan_renderer->device, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
@@ -1104,9 +1120,12 @@ void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_cam
     render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
     render_pass_begin_info.renderArea.extent = renderer->swap_chain->extent;
 
-    VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
-    render_pass_begin_info.clearValueCount = 1;
-    render_pass_begin_info.pClearValues = &clear_color;
+	VkClearValue clear_values[2];
+	clear_values[0].color = (VkClearColorValue) { 0.0f, 0.0f, 0.0f, 1.0f };
+	clear_values[1].depthStencil = (VkClearDepthStencilValue) { 1.0f, 0 };
+
+    render_pass_begin_info.clearValueCount = 2;
+    render_pass_begin_info.pClearValues = clear_values;
 
     // Begin render pass
     vkCmdBeginRenderPass(*command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -1240,13 +1259,7 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Render pass [OK]");
 
-	if (create_frame_buffers(renderer) != LX_SUCCESS) {
-		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
-		return LX_ERROR;
-	}
-	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
-
-	if (create_command_pool_buffers(renderer, renderer->command_pool, lx_array_size(renderer->frame_buffers)) != LX_SUCCESS) {
+	if (create_command_pool_buffers(renderer, renderer->command_pool, lx_array_size(renderer->swap_chain->images)) != LX_SUCCESS) {
 		LX_LOG_ERROR(LOG_TAG, "Failed to create command pool buffers");
 		return LX_ERROR;
 	}
@@ -1258,6 +1271,12 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Depth buffer [OK]");
+
+	if (create_frame_buffers(renderer) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to frame buffers");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Frame buffer(s) [OK]");
 
 	renderer->record_command_buffer = true;
     if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {

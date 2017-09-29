@@ -55,6 +55,18 @@ lx_render_pipeline_layout_t *lx_render_pipeline_create_layout(lx_allocator_t *al
     layout->color_blend_state.blendConstants[1] = 0.0f;
     layout->color_blend_state.blendConstants[2] = 0.0f;
     layout->color_blend_state.blendConstants[3] = 0.0f;
+
+	layout->depth_stencil_state = (VkPipelineDepthStencilStateCreateInfo) { 0 };
+	layout->depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	layout->depth_stencil_state.depthTestEnable = VK_TRUE;
+	layout->depth_stencil_state.depthWriteEnable = VK_TRUE;
+	layout->depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS;
+	layout->depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
+	layout->depth_stencil_state.minDepthBounds = 0.0f; // Optional
+	layout->depth_stencil_state.maxDepthBounds = 1.0f; // Optional
+	layout->depth_stencil_state.stencilTestEnable = VK_FALSE;
+	layout->depth_stencil_state.front = (VkStencilOpState) { 0 }; // Optional
+	layout->depth_stencil_state.back = (VkStencilOpState) { 0 }; // Optional
     
     layout->is_dirty = true;
 
@@ -256,6 +268,7 @@ lx_result_t lx_render_pipeline_create(lx_gpu_device_t *device, lx_render_pipelin
     pipeline_create_info.pRasterizationState = &layout->rasterization_state;
     pipeline_create_info.pMultisampleState = &layout->multisample_state;
     pipeline_create_info.pColorBlendState = &layout->color_blend_state;
+	pipeline_create_info.pDepthStencilState = &layout->depth_stencil_state;
     pipeline_create_info.layout = layout->handle;
     pipeline_create_info.renderPass = render_pass;
     pipeline_create_info.subpass = 0;

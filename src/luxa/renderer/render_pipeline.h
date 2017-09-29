@@ -21,6 +21,7 @@ typedef struct lx_render_pipeline_layout {
     VkPipelineMultisampleStateCreateInfo multisample_state;
     VkPipelineColorBlendAttachmentState color_blend_attachment_state;
     VkPipelineColorBlendStateCreateInfo color_blend_state;
+	VkPipelineDepthStencilStateCreateInfo depth_stencil_state;
     VkDescriptorSetLayout descriptor_set_layout;
     bool is_dirty;
 } lx_render_pipeline_layout_t;
