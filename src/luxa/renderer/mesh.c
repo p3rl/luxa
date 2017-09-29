@@ -48,12 +48,12 @@ const lx_vertex_t *lx_mesh_vertices(const lx_mesh_t *mesh)
 
 size_t lx_mesh_vertices_byte_size(const lx_mesh_t *mesh)
 {
-    return lx_array_size(mesh->vertices) * sizeof(lx_vec3_t);
+	return lx_array_bytes(mesh->vertices);
 }
 
 size_t lx_mesh_indices_byte_size(const lx_mesh_t *mesh)
 {
-    return lx_array_size(mesh->indices) * sizeof(uint32_t);
+	return lx_array_bytes(mesh->indices);
 }
 
 const uint32_t *lx_mesh_indices(const lx_mesh_t *mesh)

@@ -141,10 +141,10 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		{ { size, size, 0.0f },{ 0.0f, 1.0f, 0.0f },{ 1.0f, 0.0f, 1.0f } }, // 19
 
 		// Bottom
-		{ { size, 0.0f, size },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f } }, // 20
-		{ { size, 0.0f, 0.0f },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f } }, // 21
-		{ { 0.0f, 0.0f, 0.0f },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f } }, // 22
-		{ { 0.0f, 0.0f, size },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f } } // 23
+		{ { size, 0.0f, size },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 0.5f, 1.0f } }, // 20
+		{ { size, 0.0f, 0.0f },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 0.5f, 1.0f } }, // 21
+		{ { 0.0f, 0.0f, 0.0f },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 0.5f, 1.0f } }, // 22
+		{ { 0.0f, 0.0f, size },{ 0.0f, -1.0f, 0.0f },{ 1.0f, 0.5f, 1.0f } } // 23
 	};
 
     uint32_t indices[] =
@@ -162,16 +162,16 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		8, 10, 11,
 
 		//// Left
-		//12, 13, 14,
-		//12, 14, 15,
+		12, 13, 14,
+		12, 14, 15,
 
 		//// Top
-		//16, 17, 18,
-		//16, 18, 19,
+		16, 17, 18,
+		16, 18, 19,
 
 		//// Bottom
-		//20, 21, 22,
-		//20, 22, 23,
+		20, 21, 22,
+		20, 22, 23,
 	};
 
     lx_mesh_set_vertices(mesh, vertices, sizeof(vertices)/ sizeof(vertices[0]));
@@ -187,7 +187,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
     camera = lx_camera_create(allocator);
     lx_camera_set_projection(camera, 0.1f, 10.0f, lx_radians(45.0f));
 
-    lx_vec3_t camera_pos = { 2.0f, -2.0f, 5.0f }; 
+    lx_vec3_t camera_pos = { -3.0f, -2.0f, -3.0f };
     lx_vec3_t camera_target = { 0.0f, 0.0f, 0.0f };
     lx_vec3_t camera_up = { 0, 1.0f, 0 };
     lx_camera_look_at(camera, &camera_target, &camera_pos, &camera_up);

@@ -109,6 +109,12 @@ static size_t lx_array_size(lx_array_t *array)
 	return array->size;
 }
 
+static size_t lx_array_bytes(lx_array_t *array)
+{
+	LX_ASSERT(array, "Invalid array");
+	return array->size * array->element_size;
+}
+
 static inline bool lx_array_exists(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
