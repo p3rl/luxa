@@ -8,6 +8,11 @@
 
 #define LOG_TAG "Renderer"
 
+typedef struct depth_buffer {
+	lx_gpu_image_t *image;
+	VkImageView image_view;
+} depth_buffer_t;
+
 typedef struct render_pipeline {
     VkRenderPass render_pass;
     lx_array_t vertex_shader_ids; //uint32_t;
@@ -51,6 +56,7 @@ struct lx_renderer
     lx_render_pipeline_t *render_pipeline;
 	swap_chain_t *swap_chain;
 	command_pool_t *command_pool;
+	depth_buffer_t *depth_buffer;
     lx_gpu_buffer_t *model_view_proj_gpu_buffer;
 	VkInstance instance;
 	VkSurfaceKHR presentation_surface;	
@@ -73,6 +79,88 @@ VkBool32 debug_report_callback(
 {
 	LX_LOG_WARNING(LOG_TAG, "%s (%s, %d)", message, layer_prefix, message_code);
 	return true;
+}
+
+VkCommandBuffer begin_single_time_submit(lx_renderer_t *renderer) {
+	LX_ASSERT(renderer, "Invalid renderer");
+	LX_ASSERT(renderer->command_pool, "Invalid command pool");
+	
+	VkCommandBufferAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandPool = renderer->command_pool->handle;
+	alloc_info.commandBufferCount = 1;
+
+	VkCommandBuffer command_buffer;
+	if (vkAllocateCommandBuffers(renderer->device->handle, &alloc_info, &command_buffer) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to allocate command buffers");
+		return NULL;
+	}
+
+	VkCommandBufferBeginInfo begin_info = { 0 };
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to allocate command buffers");
+		vkFreeCommandBuffers(renderer->device->handle, renderer->command_pool->handle, 1, &command_buffer);
+		return NULL;
+	}
+
+	return command_buffer;
+}
+
+static lx_result_t end_single_time_submit(lx_renderer_t *renderer, VkCommandBuffer command_buffer) {
+	
+	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to end single time submit");
+		vkFreeCommandBuffers(renderer->device->handle, renderer->command_pool->handle, 1, &command_buffer);
+		return LX_ERROR;
+	}
+
+	VkSubmitInfo submit_info = { 0 };
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	if (vkQueueSubmit(renderer->device->graphics_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to submit single time submit");
+		vkFreeCommandBuffers(renderer->device->handle, renderer->command_pool->handle, 1, &command_buffer);
+		return LX_ERROR;
+	}
+	
+	vkQueueWaitIdle(renderer->device->graphics_queue);
+	vkFreeCommandBuffers(renderer->device->handle, renderer->command_pool->handle, 1, &command_buffer);
+
+	return LX_SUCCESS;
+}
+
+static bool has_format_stencil_component(VkFormat format)
+{
+	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+static VkFormat find_supported_format(lx_gpu_device_t *device, const VkFormat *formats, size_t num_formats, VkImageTiling tiling, VkFormatFeatureFlags features)
+{
+	for (size_t i = 0; i < num_formats; ++i) {
+		VkFormatProperties format_properties;
+		vkGetPhysicalDeviceFormatProperties(device->gpu->handle, formats[i], &format_properties);
+		if (tiling == VK_IMAGE_TILING_LINEAR && (format_properties.linearTilingFeatures & features) == features) {
+			return formats[i];
+		}
+		else if (tiling == VK_IMAGE_TILING_OPTIMAL && (format_properties.optimalTilingFeatures & features) == features) {
+			return formats[i];
+		}
+	}
+	
+	return VK_FORMAT_UNDEFINED;
+}
+
+static VkFormat get_depth_buffer_format(lx_gpu_device_t *device)
+{
+	const VkFormat formats[] = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+	size_t num_formats = 3;
+	return find_supported_format(device, formats, num_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
 static lx_array_t *get_available_validation_layers(lx_allocator_t *allocator)
@@ -447,6 +535,136 @@ static lx_result_t create_render_pass(lx_renderer_t *renderer)
 	return LX_SUCCESS;
 }
 
+static lx_result_t transition_image_layout(lx_renderer_t *renderer, lx_gpu_image_t *image, VkImageLayout oldLayout, VkImageLayout newLayout) {
+	VkCommandBuffer command_buffer = begin_single_time_submit(renderer);
+	LX_ASSERT(command_buffer, "Failed to begin single time submit");
+
+	VkImageMemoryBarrier barrier = { 0 };
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = oldLayout;
+	barrier.newLayout = newLayout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image->handle;
+
+	if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		if (has_format_stencil_component(image->format)) {
+			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+	}
+	else {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	VkPipelineStageFlags source_stage = VK_PIPELINE_STAGE_FLAG_BITS_MAX_ENUM;
+	VkPipelineStageFlags destination_stage = VK_PIPELINE_STAGE_FLAG_BITS_MAX_ENUM;
+
+	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+		source_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destination_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		source_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		destination_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		source_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destination_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	}
+	else {
+		LX_ASSERT(false, "unsupported layout transition!");
+	}
+
+	vkCmdPipelineBarrier(
+		command_buffer,
+		source_stage, destination_stage,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &barrier
+	);
+
+	return end_single_time_submit(renderer, command_buffer);
+}
+
+static lx_result_t create_depth_buffer(lx_renderer_t *renderer)
+{
+	LX_ASSERT(renderer, "Invalid renderer");
+	LX_ASSERT(!renderer->depth_buffer, "Depth buffer already present");
+
+	VkFormat depth_buffer_format = get_depth_buffer_format(renderer->device);
+	if (depth_buffer_format == VK_FORMAT_UNDEFINED) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to find depth buffer format");
+		return LX_ERROR;
+	}
+	
+	lx_gpu_image_t *image = lx_gpu_create_image(
+		renderer->device,
+		renderer->swap_chain->extent,
+		depth_buffer_format,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkImageViewCreateInfo create_info = { 0 };
+	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	create_info.image = image->handle;
+	create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	create_info.format = depth_buffer_format;
+	create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	create_info.subresourceRange.baseMipLevel = 0;
+	create_info.subresourceRange.levelCount = 1;
+	create_info.subresourceRange.baseArrayLayer = 0;
+	create_info.subresourceRange.layerCount = 1;
+
+	VkImageView image_view;
+	if (vkCreateImageView(renderer->device->handle, &create_info, NULL, &image_view) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create depth buffer");
+		lx_gpu_destroy_image(renderer->device, image);
+		return LX_ERROR;
+	}
+
+	renderer->depth_buffer = lx_alloc(renderer->allocator, sizeof(depth_buffer_t));
+	*renderer->depth_buffer = (depth_buffer_t) { .image = image, .image_view = image_view };
+
+	if (transition_image_layout(renderer, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) != LX_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to transition image layout");
+		lx_gpu_destroy_image(renderer->device, image);
+		vkDestroyImageView(renderer->device->handle, image_view, NULL);
+		lx_free(renderer->allocator, renderer->depth_buffer);
+		renderer->depth_buffer = NULL;
+	}
+
+	return LX_SUCCESS;
+}
+
+static void destroy_depth_buffer(lx_renderer_t *renderer)
+{
+	LX_ASSERT(renderer, "Invalid renderer");
+	LX_ASSERT(renderer->depth_buffer, "Invalid depth buffer");
+
+	lx_gpu_destroy_image(renderer->device, renderer->depth_buffer->image);
+	vkDestroyImageView(renderer->device->handle, renderer->depth_buffer->image_view, NULL);
+	lx_free(renderer->allocator, renderer->depth_buffer);
+	renderer->depth_buffer = NULL;
+}
+
 static void destroy_frame_buffers(lx_renderer_t *renderer)
 {
 	if (!renderer->frame_buffers)
@@ -680,6 +898,13 @@ lx_result_t lx_renderer_create(lx_allocator_t *allocator, lx_renderer_t **render
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
+
+	if (create_depth_buffer(vulkan_renderer) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create depth buffer");
+		lx_renderer_destroy(allocator, (lx_renderer_t*)vulkan_renderer);
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Depth buffer [OK]");
 	 
 	// Create semaphore(s)
 	if (lx_gpu_create_semaphore(vulkan_renderer->device, &vulkan_renderer->semaphore_image_available) != LX_SUCCESS ||
@@ -701,6 +926,9 @@ void lx_renderer_destroy(lx_allocator_t *allocator, lx_renderer_t *renderer)
 	// Destroy semaphores
 	lx_gpu_destroy_semaphore(renderer->device, renderer->semaphore_image_available);
     lx_gpu_destroy_semaphore(renderer->device, renderer->semaphore_render_finished);
+
+	// Destroy depth buffer
+	destroy_depth_buffer(renderer);
 	
 	// Destroy command pool
 	destroy_command_pool(renderer);
@@ -794,7 +1022,7 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
 
     VkVertexInputBindingDescription mesh_vertex_binding = { 0 };
     mesh_vertex_binding.binding = 0;
-    mesh_vertex_binding.stride = sizeof(lx_vec3_t);
+    mesh_vertex_binding.stride = sizeof(lx_vertex_t);
     mesh_vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription mesh_vertex_attribute = { 0 };
@@ -803,8 +1031,22 @@ lx_result_t lx_renderer_create_render_pipeline(lx_renderer_t *renderer, uint32_t
     mesh_vertex_attribute.offset = 0;
     mesh_vertex_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 
+	VkVertexInputAttributeDescription mesh_normal_attribute = { 0 };
+	mesh_normal_attribute.binding = 0;
+	mesh_normal_attribute.location = 1;
+	mesh_normal_attribute.offset = sizeof(lx_vec3_t);
+	mesh_normal_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+	VkVertexInputAttributeDescription mesh_color_attribute = { 0 };
+	mesh_color_attribute.binding = 0;
+	mesh_color_attribute.location = 2;
+	mesh_color_attribute.offset = sizeof(lx_vec3_t) + sizeof(lx_vec3_t);
+	mesh_color_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
     lx_render_pipeline_add_vertex_binding(renderer->render_pipeline_layout, &mesh_vertex_binding);
     lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_vertex_attribute);
+	lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_normal_attribute);
+	lx_render_pipeline_add_vertex_attribute(renderer->render_pipeline_layout, &mesh_color_attribute);
 
     VkDescriptorSetLayoutBinding descriptor_set_binding = { 0 };
     descriptor_set_binding.binding = 0;
@@ -969,6 +1211,7 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 	LX_LOG_DEBUG(LOG_TAG, "Resetting swap chain");
 
 	destroy_frame_buffers(renderer);
+	destroy_depth_buffer(renderer);
 	destroy_command_pool_buffers(renderer, renderer->command_pool);
 
     lx_render_pipeline_destroy(renderer->device, renderer->render_pipeline);
@@ -1008,6 +1251,13 @@ lx_result_t lx_renderer_reset_swap_chain(lx_renderer_t *renderer, lx_extent2_t s
 		return LX_ERROR;
 	}
 	LX_LOG_DEBUG(LOG_TAG, "Command pool buffers [OK]");
+
+
+	if (create_depth_buffer(renderer) != VK_SUCCESS) {
+		LX_LOG_ERROR(LOG_TAG, "Failed to create depth buffer");
+		return LX_ERROR;
+	}
+	LX_LOG_DEBUG(LOG_TAG, "Depth buffer [OK]");
 
 	renderer->record_command_buffer = true;
     if (lx_render_pipeline_create(renderer->device, renderer->render_pipeline_layout, renderer->render_pass, &renderer->render_pipeline) != LX_SUCCESS) {

@@ -3,7 +3,7 @@
 
 struct lx_mesh {
     lx_allocator_t *allocator;
-    lx_array_t *vertices; // lx_vec3_t
+    lx_array_t *vertices; // vertex_t
     lx_array_t *indices; // uint32_t
     lx_any_t vertex_buffer;
     lx_any_t index_buffer;
@@ -15,7 +15,7 @@ lx_mesh_t *lx_mesh_create(lx_allocator_t *allocator)
     
     *mesh = (lx_mesh_t) {
         .allocator = allocator,
-        .vertices = lx_array_create(allocator, sizeof(lx_vec3_t)),
+        .vertices = lx_array_create(allocator, sizeof(lx_vertex_t)),
         .indices = lx_array_create(allocator, sizeof(uint32_t)),
         .vertex_buffer = NULL,
         .index_buffer = NULL
@@ -41,7 +41,7 @@ size_t lx_mesh_num_indices(const lx_mesh_t *mesh)
     return lx_array_size(mesh->indices);
 }
 
-const lx_vec3_t *lx_mesh_vertices(const lx_mesh_t *mesh)
+const lx_vertex_t *lx_mesh_vertices(const lx_mesh_t *mesh)
 {
     return lx_array_begin(mesh->vertices);
 }
@@ -61,7 +61,7 @@ const uint32_t *lx_mesh_indices(const lx_mesh_t *mesh)
     return lx_array_begin(mesh->indices);
 }
 
-void lx_mesh_set_vertices(lx_mesh_t *mesh, lx_vec3_t *vertices, size_t num_vertices)
+void lx_mesh_set_vertices(lx_mesh_t *mesh, lx_vertex_t *vertices, size_t num_vertices)
 {
     lx_array_copy(mesh->vertices, vertices, num_vertices);
 }

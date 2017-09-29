@@ -364,3 +364,62 @@ lx_shader_t *lx_gpu_shader(lx_gpu_device_t *device, uint32_t id)
 {
     return lx_array_find_if(device->shaders, shader_id_equals, &id);
 }
+
+lx_gpu_image_t *lx_gpu_create_image(lx_gpu_device_t *device, VkExtent2D size, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_properties)
+{
+	LX_ASSERT(device, "Invalid device");
+	LX_ASSERT(format != VK_FORMAT_UNDEFINED, "Invalid format");
+
+	VkImageCreateInfo image_create_info = { 0 };
+	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_create_info.imageType = VK_IMAGE_TYPE_2D;
+	image_create_info.extent.width = size.width;
+	image_create_info.extent.height = size.height;
+	image_create_info.extent.depth = 1;
+	image_create_info.mipLevels = 1;
+	image_create_info.arrayLayers = 1;
+	image_create_info.format = format;
+	image_create_info.tiling = tiling;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	image_create_info.usage = usage;
+	image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkImage handle;
+	if (vkCreateImage(device->handle, &image_create_info, NULL, &handle) != VK_SUCCESS) {
+		return NULL;
+	}
+
+	VkMemoryRequirements memory_requirements;
+	vkGetImageMemoryRequirements(device->handle, handle, &memory_requirements);
+
+	VkMemoryAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = memory_requirements.size;
+	alloc_info.memoryTypeIndex = find_memory_type_index(device, &memory_requirements, memory_properties);
+
+	VkDeviceMemory memory;
+	if (vkAllocateMemory(device->handle, &alloc_info, NULL, &memory) != VK_SUCCESS) {
+		vkDestroyImage(device->handle, handle, NULL);
+		return NULL;
+	}
+
+	if (vkBindImageMemory(device->handle, handle, memory, 0) != VK_SUCCESS) {
+		vkDestroyImage(device->handle, handle, NULL);
+		vkFreeMemory(device->handle, memory, NULL);
+	}
+
+	lx_gpu_image_t *image = lx_alloc(device->gpu->allocator, sizeof(lx_gpu_image_t));
+	*image = (lx_gpu_image_t) { .handle = handle, .memory = memory, .offset = 0, .format = format };
+
+	return image;
+}
+
+void lx_gpu_destroy_image(lx_gpu_device_t *device, lx_gpu_image_t *image)
+{
+	LX_ASSERT(device, "Invalid device");
+	LX_ASSERT(image, "Invalid image");
+
+	vkDestroyImage(device->handle, image->handle, NULL);
+	vkFreeMemory(device->handle, image->memory, NULL);
+}

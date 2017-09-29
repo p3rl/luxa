@@ -44,6 +44,13 @@ typedef struct lx_gpu_buffer {
     void *data;
 } lx_gpu_buffer_t;
 
+typedef struct lx_gpu_image {
+	VkImage handle;
+	VkDeviceMemory memory;
+	VkDeviceSize offset;
+	VkFormat format;
+} lx_gpu_image_t;
+
 lx_result_t lx_gpu_all_available(lx_allocator_t *allocator, VkInstance instance, VkSurfaceKHR presentation_surface, lx_array_t **gpus);
 
 lx_result_t lx_gpu_create_device(lx_gpu_t *gpu, const char *extensions[], size_t num_extensions, const char *validation_layers[], size_t num_validation_layers, lx_gpu_device_t **device);
@@ -73,6 +80,10 @@ lx_result_t lx_gpu_create_shader(lx_gpu_device_t *device, const char *code, size
 lx_result_t lx_gpu_destroy_shader(lx_gpu_device_t *device, uint32_t id);
 
 lx_shader_t *lx_gpu_shader(lx_gpu_device_t *device, uint32_t id);
+
+lx_gpu_image_t *lx_gpu_create_image(lx_gpu_device_t *device, VkExtent2D size, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
+
+void lx_gpu_destroy_image(lx_gpu_device_t *device, lx_gpu_image_t *image);
 
 #ifdef __cplusplus
 }

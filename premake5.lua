@@ -1,3 +1,8 @@
+local vulkan_sdk_dir = "C://VulkanSDK//1.0.61.1"
+local vulkan_include_dir = vulkan_sdk_dir .. "//Include"
+local vulkan_lib_dir = vulkan_sdk_dir .. "//Lib"
+local disabled_warnings = { "4204", "4100", "4152", "4201" }
+
 workspace "luxa"
     configurations { "Debug", "Release" }
     location "build"
@@ -8,11 +13,11 @@ project "application"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
     warnings "Extra"
-    disablewarnings { "4204", "4100", "4152", "4201" }
+    disablewarnings(disabled_warnings)
 
     includedirs { "src" }
 
-    libdirs "C://VulkanSDK//1.0.57.0//Lib"
+    libdirs { vulkan_lib_dir }
 
     files { "src/application**.h", "src/application/**.c" }
 
@@ -33,10 +38,10 @@ project "luxa"
     language "C"
     targetdir "build/bin/%{cfg.buildcfg}"
     warnings "Extra"
-    disablewarnings { "4204", "4100", "4152", "4201" }
+    disablewarnings(disabled_warnings)
 
-    includedirs { "src", "C://VulkanSDK//1.0.57.0//Include" }
-    libdirs "C://VulkanSDK//1.0.57.0//Lib"
+    includedirs { "src", vulkan_include_dir }
+    libdirs { vulkan_lib_dir }
 
     files { "src/luxa/**.h", "src/luxa/**.c" }
 
