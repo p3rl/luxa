@@ -69,6 +69,8 @@ typedef struct lx_extent2 {
 
 #define lx_degrees(radians) (radians * LX_180_OVER_PI)
 
+#define lx_near_equalf(a, b) (fabs(a - b) < 0.00001f)
+
 /*
  * 2-D Vector.
  */
@@ -158,6 +160,11 @@ static LX_INLINE float lx_vec2_distance(const lx_vec2_t *a, const lx_vec2_t *b)
 /*
  * 3-D Vector.
  */
+static LX_INLINE bool lx_vec3_near_equal(lx_vec3_t *a, lx_vec3_t *b)
+{
+	return lx_near_equalf(a->x, b->x) && lx_near_equalf(a->y, b->y) && lx_near_equalf(a->z, b->z);
+}
+
 static LX_INLINE lx_vec3_t *lx_vec3_zero(lx_vec3_t *v)
 {
     *v = (lx_vec3_t) { 0 };
@@ -568,7 +575,7 @@ static LX_INLINE void lx_mat4_set_rotation_yxz(float angle_y, float angle_x, flo
     out->m44 = 1.0f;
 }
 
-static LX_INLINE void lx_mat4_set_translation(float x, float y, float z, lx_mat4_t *out)
+static LX_INLINE void lx_mat4_translation(float x, float y, float z, lx_mat4_t *out)
 {
     out->m11 = 1.0f; out->m12 = 0.0f; out->m13 = 0.0f; out->m14 = 0.0f;
     out->m21 = 0.0f; out->m22 = 1.0f; out->m23 = 0.0f; out->m24 = 0.0f;
@@ -576,12 +583,12 @@ static LX_INLINE void lx_mat4_set_translation(float x, float y, float z, lx_mat4
     out->m41 = x;    out->m42 = y;    out->m43 = z;    out->m44 = 1.0f;
 }
 
-static LX_INLINE void lx_mat4_set_translation_from_vec3(const lx_vec3_t *v, lx_mat4_t *out)
+static LX_INLINE void lx_mat4_translation_from_vec3(const lx_vec3_t *v, lx_mat4_t *out)
 {
-    lx_mat4_set_translation(v->x, v->y, v->z, out);
+    lx_mat4_translation(v->x, v->y, v->z, out);
 }
 
-static LX_INLINE void lx_mat4_set_projection(float near_plane, float far_plane, float width, float height, lx_mat4_t *out)
+static LX_INLINE void lx_mat4_projection(float near_plane, float far_plane, float width, float height, lx_mat4_t *out)
 {
     float two_near = near_plane + near_plane;
     float range = far_plane / (far_plane - near_plane);
@@ -607,7 +614,7 @@ static LX_INLINE void lx_mat4_set_projection(float near_plane, float far_plane, 
     out->m44 = 0.0f;
 }
 
-static LX_INLINE void lx_mat4_set_projection_fov(float near_plane, float far_plane, float fov_y, float aspect_ratio, lx_mat4_t *out)
+static LX_INLINE void lx_mat4_perspective_fov(float near_plane, float far_plane, float fov_y, float aspect_ratio, lx_mat4_t *out)
 {
     float half_fov = 0.5f * fov_y;
     float sf = sinf(half_fov);
@@ -642,7 +649,7 @@ static LX_INLINE lx_mat4_t *lx_mat4_look_to(const lx_vec3_t* dir, const lx_vec3_
     lx_vec3_t x, y, z;
     lx_vec3_normalize_to(dir, &z);
     lx_vec3_normalize(lx_vec3_cross(up, &z, &x));
-    lx_vec3_cross(&z, &x, &y);
+	lx_vec3_normalize(lx_vec3_cross(&z, &x, &y));
 
     float dotx = lx_vec3_dot(&x, position);
     float doty = lx_vec3_dot(&y, position);
@@ -658,8 +665,8 @@ static LX_INLINE lx_mat4_t *lx_mat4_look_to(const lx_vec3_t* dir, const lx_vec3_
 
 static LX_INLINE lx_mat4_t *lx_mat4_look_at(const lx_vec3_t* target, const lx_vec3_t *position, const lx_vec3_t *up, lx_mat4_t *out)
 {
-    lx_vec3_t z;
-    return lx_mat4_look_to(lx_vec3_sub(target, position, &z), position, up, out);
+    lx_vec3_t dir;
+    return lx_mat4_look_to(lx_vec3_sub(target, position, &dir), position, up, out);
 }
 
 #ifdef __cplusplus

@@ -20,8 +20,11 @@ out gl_PerVertex {
 };
 
 void main() {
-    //mat4 mvp = ubo.proj * ubo.view * ubo.model;
+    mat4 mvp = ubo.proj * ubo.view * ubo.model;
+    //mat4 mvp = transpose(ubo.model * ubo.view * ubo.proj);
     //gl_Position =  vec4(inPosition, 1.0) * transpose(mvp);
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0); 
+    gl_Position = mvp * vec4(inPosition, 1.0);
+    gl_Position.y = -gl_Position.y;
+    gl_Position.z = (gl_Position.z + gl_Position.w) / 2.0;
     fragColor =  inColor;
 }
