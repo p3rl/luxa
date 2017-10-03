@@ -46,8 +46,9 @@ static LX_INLINE void lx_task_start(lx_task_factory_t *factory, lx_task_t task)
 
 static LX_INLINE lx_task_t lx_task_run(lx_task_factory_t *factory, lx_task_function_t task_func, lx_any_t task_argument)
 {
-	lx_task_factory_state_t *state = factory->state;
-	factory->start_task(state, factory->create_task(state, task_func, task_argument));
+	lx_task_t task = factory->create_task(factory->state, task_func, task_argument);
+	factory->start_task(factory->state, task);
+	return task;
 }
 
 static LX_INLINE lx_task_t lx_task_continue_with(lx_task_factory_t *factory, lx_task_t parent_task, lx_task_function_t task_func, lx_any_t task_argument)

@@ -11,13 +11,13 @@
 
 int main(int argc, char **argv)
 {
-	/*setup_array_test_fixture();
+	setup_array_test_fixture();
 	setup_hash_test_fixture();
 	setup_string_test_fixture();
 	setup_buffer_tests();
 	setup_map_test_fixture();
     setup_scene_test_fixture();
-	setup_math_test_fixture();*/
+	setup_math_test_fixture();
 	setup_task_test_fixture();
 	return 0;
 }

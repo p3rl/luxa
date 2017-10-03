@@ -56,14 +56,14 @@ static lx_array_t *lx_array_create_with_size(lx_allocator_t *allocator, size_t e
 	return a;
 }
 
-static void lx_array_destroy(lx_array_t *array)
+static LX_INLINE void lx_array_destroy(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invaid array");
 	lx_free(array->allocator, array->buffer);
 	lx_free(array->allocator, array);
 }
 
-static void lx_array_push_back(lx_array_t *array, lx_any_t element)
+static LX_INLINE void lx_array_push_back(lx_array_t *array, lx_any_t element)
 {
 	LX_ASSERT(array, "Invalid array");
 
@@ -72,50 +72,64 @@ static void lx_array_push_back(lx_array_t *array, lx_any_t element)
 	array->size++;
 }
 
-static bool lx_array_is_empty(const lx_array_t *array)
+static LX_INLINE bool lx_array_is_empty(const lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return array->size == 0;
 }
 
-static lx_any_t lx_array_begin(lx_array_t *array)
+static LX_INLINE lx_any_t lx_array_begin(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return (void*)(array->buffer);
 }
 
-static lx_any_t lx_array_end(lx_array_t *array)
+static LX_INLINE lx_any_t lx_array_end(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return (lx_any_t)(array->buffer + (array->size * array->element_size));
 }
 
-static lx_any_t lx_array_at(const lx_array_t *array, size_t index)
+static LX_INLINE lx_any_t lx_array_at(const lx_array_t *array, size_t index)
 {
 	LX_ASSERT(array, "Invalid array");
 	LX_ASSERT(index < array->size, "Index out of bounds");
 	return (lx_any_t)(array->buffer + (array->element_size * index));
 }
 
-static void lx_array_push_back_int(lx_array_t *array, int value)
+static LX_INLINE lx_any_t lx_array_pop_back(lx_array_t *array)
+{
+	LX_ASSERT(array->size, "Array is empty");
+	lx_any_t element = lx_array_at(array, array->size - 1);
+	array->size--;
+	return element;
+}
+
+static LX_INLINE void lx_array_push_back_int(lx_array_t *array, int value)
 {
 	LX_ASSERT(array, "Invalid array");
 	lx_array_push_back(array, &value);
 }
 
-static size_t lx_array_size(lx_array_t *array)
+static LX_INLINE size_t lx_array_size(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return array->size;
 }
 
-static size_t lx_array_bytes(lx_array_t *array)
+static LX_INLINE size_t lx_array_bytes(lx_array_t *array)
 {
 	LX_ASSERT(array, "Invalid array");
 	return array->size * array->element_size;
 }
 
-static inline bool lx_array_exists(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static LX_INLINE bool lx_array_empty(lx_array_t *array)
+{
+	LX_ASSERT(array, "Invalid array");
+	return array->size == 0;
+}
+
+static LX_INLINE bool lx_array_exists(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
 
@@ -126,7 +140,7 @@ static inline bool lx_array_exists(const lx_array_t *array, lx_binary_predicate_
 	return exists;
 }
 
-static inline lx_range_t lx_array_range(const lx_array_t *array)
+static LX_INLINE lx_range_t lx_array_range(const lx_array_t *array)
 {
 	return (lx_range_t) {
 		.begin = array->buffer,
@@ -135,7 +149,7 @@ static inline lx_range_t lx_array_range(const lx_array_t *array)
 	};
 }
 
-static inline lx_any_t lx_array_find_if(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static LX_INLINE lx_any_t lx_array_find_if(const lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
 	LX_ASSERT(array, "Invalid array");
 
@@ -151,7 +165,7 @@ static inline lx_any_t lx_array_find_if(const lx_array_t *array, lx_binary_predi
 	return NULL;
 }
 
-static inline bool lx_array_remove_at(lx_array_t *array, size_t index)
+static LX_INLINE bool lx_array_remove_at(lx_array_t *array, size_t index)
 {
     if (index >= array->size || array->size == 0)
         return false;
@@ -170,7 +184,7 @@ static inline bool lx_array_remove_at(lx_array_t *array, size_t index)
     return true;
 }
 
-static inline bool lx_array_remove_if(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
+static LX_INLINE bool lx_array_remove_if(lx_array_t *array, lx_binary_predicate_t predicate, lx_any_t arg)
 {
     LX_ASSERT(array, "Invalid array");
     LX_ASSERT(predicate, "Invalid array");
@@ -189,7 +203,7 @@ static inline bool lx_array_remove_if(lx_array_t *array, lx_binary_predicate_t p
     return false;
 }
 
-static inline void lx_array_copy(lx_array_t *array, lx_any_t data, size_t size)
+static LX_INLINE void lx_array_copy(lx_array_t *array, lx_any_t data, size_t size)
 {
     LX_ASSERT(array, "Invalid array");
     

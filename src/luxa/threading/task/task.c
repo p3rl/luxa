@@ -2,66 +2,71 @@
 #include <luxa/threading/threading.h>
 #include <luxa/collections/array.h>
 
+static const uint64_t TASK_ID_MASK = 0x00000000FFFFFFFF;
+static const uint64_t TASK_GENERATION_MASK = 0xFFFFFFFF00000000;
+
 typedef struct buffer {
 	void *data;
 	size_t size;
 	size_t capacity;
 } buffer_t;
 
-typedef struct task_state {
+typedef struct task_context {
+	lx_task_factory_state_t *factory_state;
+	lx_task_t task;
+	lx_task_t parent_task;
 	lx_task_status_t status;
 	lx_task_function_t f;
 	lx_any_t arg;
-	lx_any_t result;
 	TP_WORK *tp_work;
-} task_state_t;
+} task_context_t;
 
 typedef struct factory_state {
 	lx_allocator_t *allocator;
 	lx_mutex_t mutex;
-	lx_array_t *free_tasks;
+	lx_array_t *tasks; // task_context_t
+	lx_array_t *free_tasks; // lx_task_t
 
 	TP_CALLBACK_ENVIRON thread_pool_callback_env;
 	TP_POOL *thread_pool;
-	
-	buffer_t buffer;
-	lx_task_t *parent;
-	lx_task_t *first_child;
-	lx_task_t *next_sibling;
-	task_state_t *task_state;
 } factory_state_t;
 
-typedef struct thread_pool_work {
-	factory_state_t *factory_state;
-	lx_task_t task;
-} thread_pool_work_t;
+uint32_t task_generation(lx_task_t task)
+{
+	return (uint32_t)((task & TASK_GENERATION_MASK) >> 32);
+}
+
+uint32_t task_index(lx_task_t task)
+{
+	return (uint32_t)(task & TASK_ID_MASK);
+}
+
+lx_task_t task_incremeant_generation(lx_task_t task)
+{
+	uint64_t generation = task_generation(task) + 1;
+	return task | (generation << 32);
+}
 
 void execute_task(PTP_CALLBACK_INSTANCE instance, lx_any_t context, PTP_WORK tp_work)
 {
-	thread_pool_work_t *tpw = (thread_pool_work_t *)context;
-	task_state_t *task_state = &tpw->factory_state->task_state[tpw->task];
-	task_state->f(tpw->task, task_state->arg);
-}
+	task_context_t *task_context = (task_context_t *)context;
+	factory_state_t *s = (factory_state_t *)task_context->factory_state;
 
-void allocate(factory_state_t *state, size_t capacity)
-{
-	const size_t field_size = sizeof(lx_task_t) * 3 + sizeof(task_state_t);
-
-	buffer_t old = state->buffer;
-	state->buffer.data = lx_alloc(state->allocator, field_size * capacity);
-	state->buffer.capacity = capacity;
-	memset(state->buffer.data, 0, field_size * capacity);
-	
-	memcpy(state->buffer.data, old.data, field_size * old.size);
-
-	state->parent = (lx_task_t *)state->buffer.data;
-	state->first_child = state->parent + capacity;
-	state->next_sibling = state->first_child + capacity;
-	state->task_state = (task_state_t *)(state->next_sibling + capacity);
-
-	if (!state->buffer.size) {
-		state->buffer.size = 1;
+	if (task_context->parent_task) {
+		task_context_t *parent_task_context = lx_array_at(s->tasks, task_index(task_context->parent_task));
+		if (parent_task_context->tp_work) {
+			WaitForThreadpoolWorkCallbacks(parent_task_context->tp_work, false);
+		}
 	}
+	
+	task_context->status = LX_TASK_STATUS_RUNNING;
+	task_context->f(task_context->task, task_context->arg);
+	task_context->status = LX_TASK_STATUS_DONE;
+	task_context->tp_work = NULL;
+
+	lx_mutex_lock(&s->mutex);
+	lx_array_push_back(s->free_tasks, &task_context->task);
+	lx_mutex_unlock(&s->mutex);
 }
 
 lx_task_factory_state_t *create_factory_state(lx_allocator_t *allocator)
@@ -71,11 +76,13 @@ lx_task_factory_state_t *create_factory_state(lx_allocator_t *allocator)
 	
 	state->allocator = allocator;
 	lx_mutex_create(&state->mutex);
+	state->tasks = lx_array_create(allocator, sizeof(task_context_t));
 	state->free_tasks = lx_array_create(allocator, sizeof(lx_task_t));
 	InitializeThreadpoolEnvironment(&state->thread_pool_callback_env);
 	state->thread_pool = CreateThreadpool(NULL);
 
-	allocate(state, 128);
+	// Reserve index zero for nil task.
+	lx_array_push_back(state->tasks, &(task_context_t) {0});
 	
 	return (lx_task_factory_state_t *)state;
 }
@@ -83,49 +90,59 @@ lx_task_factory_state_t *create_factory_state(lx_allocator_t *allocator)
 static lx_task_t create_task(lx_task_factory_state_t *state, lx_task_function_t f, lx_any_t arg)
 {
 	factory_state_t *s = (factory_state_t *)state;
+	lx_task_t task = 0;
 
 	lx_mutex_lock(&s->mutex);
-	
-	if (s->buffer.size >= s->buffer.capacity)
-		allocate(s, s->buffer.capacity * 2);
-	
-	lx_task_t task = s->buffer.size;
-	s->buffer.size++;
-	
+
+	if (lx_array_empty(s->free_tasks)) {
+		task = lx_array_size(s->tasks);
+		lx_array_push_back(s->tasks, &(task_context_t) { 0 });
+	}
+	else {
+		task = task_incremeant_generation(*((lx_task_t *)lx_array_pop_back(s->free_tasks)));
+	}
+
 	lx_mutex_unlock(&s->mutex);
 
-	s->parent[task] = 0;
-	s->first_child[task] = 0;
-	s->next_sibling[task] = 0;
-
-	thread_pool_work_t tpw = { s, task };
-
-	s->task_state[task] = (task_state_t) {
-		.status = LX_TASK_STATUS_CREATED,
-		.f = f,
-		.arg = arg,
-		.tp_work = CreateThreadpoolWork(execute_task, &tpw, &s->thread_pool_callback_env),
-		.result = NULL
-	};
-
+	size_t index = task_index(task);
+	task_context_t *task_context = lx_array_at(s->tasks, index);
+	task_context->factory_state = state;
+	task_context->task = task;
+	task_context->parent_task = 0;
+	task_context->f = f;
+	task_context->arg = arg;
+	task_context->status = LX_TASK_STATUS_CREATED;
+	task_context->tp_work = CreateThreadpoolWork(execute_task, task_context, &s->thread_pool_callback_env);
+	
 	return task;
 }
 
 static void start_task(lx_task_factory_state_t *state, lx_task_t task)
 {
 	factory_state_t *s = (factory_state_t *)state;
-	SubmitThreadpoolWork(s->task_state[task].tp_work);
+	task_context_t *task_context = lx_array_at(s->tasks, task_index(task));
+	SubmitThreadpoolWork(task_context->tp_work);
 }
 
 static lx_task_t continue_with(lx_task_factory_state_t *state, lx_task_t parent_task, lx_task_function_t f, lx_any_t arg)
 {
-	return 1;
+	factory_state_t *s = (factory_state_t *)state;
+	lx_task_t task = create_task(state, f, arg);
+	task_context_t *ctx = lx_array_at(s->tasks, task_index(task));
+	ctx->parent_task = parent_task;
+	SubmitThreadpoolWork(ctx->tp_work);
+
+	return task;
 }
 
 static void wait(lx_task_factory_state_t *state, lx_task_t task)
 {
 	factory_state_t *s = (factory_state_t *)state;
-	WaitForThreadpoolWorkCallbacks(s->task_state[task].tp_work, false);
+	size_t index = task_index(task);
+	task_context_t *task_context = lx_array_at(s->tasks, index);
+	
+	LX_ASSERT(task_context->task == task, "Invalid task");
+	WaitForThreadpoolWorkCallbacks(task_context->tp_work, false);
 }
 
 lx_task_factory_t *lx_task_factory_default(lx_allocator_t *allocator)
@@ -148,8 +165,8 @@ lx_task_factory_t *lx_task_factory_default(lx_allocator_t *allocator)
 void lx_task_factory_destroy_default(lx_task_factory_t *factory)
 {
 	factory_state_t *s = (factory_state_t *)factory->state;
+	lx_array_destroy(s->tasks);
 	lx_array_destroy(s->free_tasks);
 	lx_mutex_destroy(&s->mutex);
-	lx_free(s->allocator, s->buffer.data);
 	lx_free(s->allocator, s);
 }
