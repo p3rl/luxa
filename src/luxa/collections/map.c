@@ -115,7 +115,7 @@ lx_map_t *lx_map_create(lx_allocator_t *allocator, size_t element_size, lx_hash_
 
 	const size_t bytes = sizeof(size_t) + sizeof(uint8_t) + element_size;
 
-	lx_map_t *map = lx_alloc(allocator, sizeof(lx_map_t));
+	lx_map_t *map = lx_alloc(allocator, sizeof(struct lx_map));
 	
 	*map = (lx_map_t)
 	{ 
@@ -141,7 +141,6 @@ void lx_map_destroy(lx_map_t *map)
 	LX_ASSERT(map, "Invalid map");
 	
 	lx_free(map->allocator, map->buffer);
-	lx_free(map->allocator, map);
 	*map = (lx_map_t) { 0 };
 }
 

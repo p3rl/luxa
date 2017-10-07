@@ -52,12 +52,12 @@ void execute_task(PTP_CALLBACK_INSTANCE instance, lx_any_t context, PTP_WORK tp_
 	task_context_t *task_context = (task_context_t *)context;
 	factory_state_t *s = (factory_state_t *)task_context->factory_state;
 
-	if (task_context->parent_task) {
+	/*if (task_context->parent_task) {
 		task_context_t *parent_task_context = lx_array_at(s->tasks, task_index(task_context->parent_task));
 		if (parent_task_context->tp_work) {
 			WaitForThreadpoolWorkCallbacks(parent_task_context->tp_work, false);
 		}
-	}
+	}*/
 	
 	task_context->status = LX_TASK_STATUS_RUNNING;
 	task_context->f(task_context->task, task_context->arg);
@@ -168,5 +168,4 @@ void lx_task_factory_destroy_default(lx_task_factory_t *factory)
 	lx_array_destroy(s->tasks);
 	lx_array_destroy(s->free_tasks);
 	lx_mutex_destroy(&s->mutex);
-	lx_free(s->allocator, s);
 }

@@ -54,8 +54,9 @@ project "luxa"
         symbols "On"
 
     filter "configurations:Release"
-        defines { "NDEBUG" }
+        defines { "NDEBUG", "VK_USE_PLATFORM_WIN32_KHR" }
         optimize "On"
+        symbols "On"
 
 project "unit-tests"
     kind "ConsoleApp"
@@ -77,3 +78,4 @@ project "unit-tests"
     filter "configurations:Release"
         defines { "NDEBUG" }
         optimize "On"
+        symbols "On"

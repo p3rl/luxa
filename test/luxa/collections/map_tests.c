@@ -19,7 +19,8 @@ void create_returns_new_hash_map()
 void insert_and_at_returns_correct_values()
 {
 	// Arrange
-	lx_map_t *map = lx_map_create(lx_allocator_default(), sizeof(int), lx_string_hash64);
+	lx_allocator_t *allocator = lx_allocator_default();
+	lx_map_t *map = lx_map_create(allocator, sizeof(int), lx_string_hash64);
 
 	// Act & Assert
 	int a = 41;
