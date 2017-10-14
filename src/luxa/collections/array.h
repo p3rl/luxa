@@ -213,7 +213,7 @@ static LX_INLINE void lx_array_copy(lx_array_t *array, lx_any_t data, size_t siz
 }
 
 #define lx_array_for(type, ptr, arr)\
-	for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
+    for (type *ptr = lx_array_begin(arr); ptr != lx_array_end(arr); ++ptr)
 
 #ifdef __cplusplus
 }

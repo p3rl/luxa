@@ -4,7 +4,7 @@
 void lx_highres_clock_create(lx_highres_clock_t *clock)
 {
 	LARGE_INTEGER frequency = { 0 };
-	LX_ASSERT(QueryPerformanceFrequency(&frequency), "Failed to query performance frequency");
+	QueryPerformanceFrequency(&frequency);
 	clock->cpu_tick_delta = 1.0 / (double)frequency.QuadPart;
 }
 

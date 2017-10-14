@@ -4,10 +4,12 @@
 #include <test/luxa/collections/string_tests.h>
 #include <test/luxa/collections/buffer_tests.h>
 #include <test/luxa/collections/map_tests.h>
+#include <test/luxa/collections/queue_tests.h>
 #include <test/luxa/hash_tests.h>
 #include <test/luxa/renderer/scene_tests.h>
 #include <test/luxa/math/math_tests.h>
-#include <test/luxa/threading/task/task_tests.h>
+//#include <test/luxa/threading/task/task_tests.h>
+#include <test/luxa/threading/threading_tests.h>
 
 int main(int argc, char **argv)
 {
@@ -16,8 +18,10 @@ int main(int argc, char **argv)
 	setup_string_test_fixture();
 	setup_buffer_tests();
 	setup_map_test_fixture();
+    setup_queue_test_fixture();
     setup_scene_test_fixture();
 	setup_math_test_fixture();
-	setup_task_test_fixture();
-	return 0;
+	//setup_task_test_fixture();
+    setup_threading_test_fixture();
+    return 0;
 }

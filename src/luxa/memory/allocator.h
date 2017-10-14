@@ -1,5 +1,4 @@
-#ifndef ALLOCATOR_H
-#define ALLOCATOR_H
+#pragma once
 
 #include <luxa/platform.h>
 
@@ -18,20 +17,21 @@ typedef struct lx_allocator {
 
 lx_allocator_t* lx_allocator_default();
 
-static inline void *lx_alloc(lx_allocator_t *allocator, size_t size) {
+static inline void *lx_alloc(lx_allocator_t *allocator, size_t size)
+{
 	return allocator->realloc(allocator->state, NULL, size);
 }
 
-static inline void *lx_realloc(lx_allocator_t *allocator, void *ptr, size_t size) {
+static inline void *lx_realloc(lx_allocator_t *allocator, void *ptr, size_t size)
+{
 	return allocator->realloc(allocator->state, ptr, size);
 }
 
-static inline void lx_free(lx_allocator_t *allocator, void *ptr) {
+static inline void lx_free(lx_allocator_t *allocator, void *ptr)
+{
 	allocator->realloc(allocator->state, ptr, 0);
 }
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif // ALLOCATOR_H

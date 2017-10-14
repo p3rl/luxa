@@ -36,6 +36,14 @@ do {\
 	}\
 } while(0)
 
+#define LX_NULL(ptr)\
+do {\
+	if (ptr != NULL) {\
+		test_asserts++;\
+		printf("%s:%d (%s is NOT NULL)\n", __FILE__, __LINE__, #ptr);\
+	}\
+} while(0)
+
 #define LX_TRUE(ok)\
 do {\
 	if (!ok) {\

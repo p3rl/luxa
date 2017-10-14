@@ -9,15 +9,9 @@ extern "C" {
 
 typedef uint64_t lx_task_t;
 
-typedef enum lx_task_status {
-	LX_TASK_STATUS_CREATED,
-	LX_TASK_STATUS_RUNNING,
-	LX_TASK_STATUS_DONE,
-	LX_TASK_STATUS_CANCELED,
-	LX_TASK_STATUS_ERROR
-} lx_task_status_t;
+typedef struct lx_task_factory lx_task_factory_t;
 
-typedef void (*lx_task_function_t)(lx_task_t task, lx_any_t task_argument);
+typedef void (*lx_task_function_t)(lx_task_factory_t *task_factory, lx_task_t task, lx_any_t task_argument);
 
 typedef struct lx_task_factory_state lx_task_factory_state_t;
 
@@ -61,7 +55,7 @@ static LX_INLINE void lx_task_wait(lx_task_factory_t *factory, lx_task_t task)
 	factory->wait(factory->state, task);
 }
 
-lx_task_factory_t *lx_task_factory_default(lx_allocator_t *allocator);
+lx_task_factory_t *lx_task_factory_default(lx_allocator_t *allocator, size_t num_threads);
 
 void lx_task_factory_destroy_default(lx_task_factory_t *factory);
 

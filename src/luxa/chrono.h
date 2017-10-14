@@ -16,12 +16,12 @@ int64_t lx_highres_clock_now();
 
 static LX_INLINE double lx_highres_clock_milliseconds(lx_highres_clock_t *clock, int64_t ticks)
 {
-	return ticks * clock->cpu_tick_delta * 1000.0;
+	return clock->cpu_tick_delta * 1000.0 * ticks;
 }
 
 static LX_INLINE double lx_highres_clock_microseconds(lx_highres_clock_t *clock, int64_t ticks)
 {
-	return ticks * clock->cpu_tick_delta * 1000000.0;
+	return clock->cpu_tick_delta * 1000000.0 * ticks;
 }
 
 #ifdef __cplusplus
