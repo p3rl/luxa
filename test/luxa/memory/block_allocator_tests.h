@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-void setup_hash_test_fixture();
+void setup_block_allocator_test_fixture();
 
 #ifdef __cplusplus
 }
