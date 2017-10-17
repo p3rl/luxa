@@ -3,26 +3,6 @@
 #include <luxa/chrono.h>
 #include <luxa/test.h>
 
-typedef struct task_args {
-	int a;
-	int b;
-	int result;
-} task_args_t;
-
-void add_numbers(lx_task_t t, task_args_t *args)
-{
-	args->result = args->a + args->b;
-}
-
-void sub_numbers(lx_task_t t, task_args_t *args)
-{
-	args->result = args->a - args->b;
-}
-
-void empty_task(lx_task_t t, lx_any_t no_args)
-{
-}
-
 void create_and_start_task_succeeds()
 {
 	//// Arrange
