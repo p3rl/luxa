@@ -29,13 +29,11 @@ void add_block_to_free_list(block_allocator_state_t *state, block_t *block)
 	}
 }
 
-void allocate_block(block_allocator_state_t *state)
+block_t *allocate_block(block_allocator_state_t *state)
 {
 	block_t *block = lx_alloc(state->allocator, sizeof(block_t));
 	block->buffer = lx_alloc(state->allocator, (sizeof(chunk_t) + state->chunk_size) * state->block_size);
-	add_block_to_free_list(state, block);
-	block->next_block = state->blocks;
-	state->blocks = block;
+	return block;
 }
 
 static void *block_realloc(lx_allocator_state_t *state, void *p, size_t size)
@@ -57,7 +55,10 @@ static void *block_realloc(lx_allocator_state_t *state, void *p, size_t size)
 	LX_ASSERT(size == s->chunk_size, "Requested memory size doesn't match chunk size");
 
 	if (!s->free_chunks) {
-		allocate_block(s);
+		block_t *block = allocate_block(s);
+		block->next_block = s->blocks;
+		s->blocks = block;
+		add_block_to_free_list(s, block);
 	}
 
 	LX_ASSERT(s->free_chunks, "No free chunks available");
@@ -71,7 +72,7 @@ static void *block_realloc(lx_allocator_state_t *state, void *p, size_t size)
 
 lx_allocator_t *lx_block_allocator_create(lx_allocator_t *allocator, size_t chunk_size, size_t block_size)
 {
-	const size_t num_blocks = 2;
+	const size_t default_capacity = 2;
 	
 	block_allocator_state_t *state = lx_alloc(allocator, sizeof(block_allocator_state_t));
 	
@@ -83,8 +84,11 @@ lx_allocator_t *lx_block_allocator_create(lx_allocator_t *allocator, size_t chun
 		.blocks = NULL
 	};
 
-	for (size_t i = 0; i < num_blocks; ++i) {
-		allocate_block(state);
+	for (size_t i = 0; i < default_capacity; ++i) {
+		block_t *block = allocate_block(state);
+		block->next_block = state->blocks;
+		state->blocks = block;
+		add_block_to_free_list(state, block);
 	}
 
 	lx_allocator_t *block_allocator = lx_alloc(allocator, sizeof(lx_allocator_t));
@@ -101,9 +105,11 @@ void lx_block_allocator_destroy(lx_allocator_t *block_allocator)
 	
 	block_t *block = s->blocks;
 	while (block) {
+		block_t *next_block = block->next_block;
 		lx_free(s->allocator, block->buffer);
-		block_t *tmp = block;
-		block = block->next_block;
-		lx_free(s->allocator, tmp);
+		lx_free(s->allocator, block);
+		block = next_block;
 	}
+
+	*s = (block_allocator_state_t) { 0 };
 }
