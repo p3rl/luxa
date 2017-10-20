@@ -9,7 +9,7 @@
 #include <test/luxa/hash_tests.h>
 #include <test/luxa/renderer/scene_tests.h>
 #include <test/luxa/math/math_tests.h>
-//#include <test/luxa/threading/task/task_tests.h>
+#include <test/luxa/threading/task/task_tests.h>
 #include <test/luxa/threading/threading_tests.h>
 
 int main(int argc, char **argv)
@@ -23,7 +23,7 @@ int main(int argc, char **argv)
     setup_queue_test_fixture();
     setup_scene_test_fixture();
 	setup_math_test_fixture();
-	//setup_task_test_fixture();
+	setup_task_test_fixture();
     setup_threading_test_fixture();
     return 0;
 }

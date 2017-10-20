@@ -75,3 +75,18 @@ lx_any_t lx_thread_local_get_value(lx_thread_local_storage_t storage)
     LX_ASSERT(storage != TLS_OUT_OF_INDEXES, "Invalid thread local storage");
     return TlsGetValue(storage);
 }
+
+void lx_atomic_increment_32(volatile int32_t *value)
+{
+	InterlockedIncrement((long *)value);
+}
+
+void lx_atomic_decrement_32(volatile int32_t *value)
+{
+	InterlockedDecrement((long *)value);
+}
+
+int32_t lx_atomic_exchange_32(volatile int32_t *dst, int32_t exchange, int32_t comparand)
+{
+	return (int32_t)InterlockedCompareExchange((long *)dst, exchange, comparand);
+}

@@ -1,6 +1,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
 #include <stdbool.h>

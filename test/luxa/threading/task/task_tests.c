@@ -3,20 +3,30 @@
 #include <luxa/chrono.h>
 #include <luxa/test.h>
 
+typedef struct task_args {
+    int a, b;
+    int result;
+} task_args_t;
+
+void add_numbers(lx_task_factory_t *factory, lx_task_t *task, task_args_t *args)
+{
+    args->result = args->a + args->b;
+}
+
 void create_and_start_task_succeeds()
 {
-	//// Arrange
-	//lx_allocator_t *allocator = lx_allocator_default();
-	//lx_task_factory_t *task_factory = lx_task_factory_default(allocator);
-	//task_args_t args = { 41, 42, 0 };
-	//
-	//// Act
-	//lx_task_t t = lx_task_create(task_factory, add_numbers, &args);
-	//lx_task_start(task_factory, t);
-	//lx_task_wait(task_factory, t);
+	// Arrange
+	lx_allocator_t *allocator = lx_allocator_default();
+    lx_task_factory_t *task_factory = lx_task_factory_default(allocator, 2);
+	task_args_t args = { 41, 42, 0 };
+	
+	// Act
+	lx_task_t *task = lx_task_create(task_factory, add_numbers, &args);
+	lx_task_start(task_factory, task);
+	lx_task_wait(task_factory, task);
 
-	//// Assert
-	//LX_EQUALS(args.result, 83);
+	// Assert
+	LX_EQUALS(args.result, 83);
 }
 
 void contiune_with_task_succeeds()

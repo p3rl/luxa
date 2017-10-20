@@ -42,6 +42,12 @@ void lx_thread_local_set_value(lx_thread_local_storage_t storage, lx_any_t value
 
 lx_any_t lx_thread_local_get_value(lx_thread_local_storage_t storage);
 
+void lx_atomic_increment_32(volatile int32_t *value);
+
+void lx_atomic_decrement_32(volatile int32_t *value);
+
+int32_t lx_atomic_exchange_32(volatile int32_t *dst, int32_t exchange, int32_t comparand);
+
 #ifdef __cplusplus
 }
 #endif
