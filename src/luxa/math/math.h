@@ -254,23 +254,17 @@ static LX_INLINE float lx_vec3_length(const lx_vec3_t *v)
     return lx_sqrtf(lx_vec3_squared_length(v));
 }
 
-static LX_INLINE lx_vec3_t *lx_vec3_normalize(lx_vec3_t *v)
+static LX_INLINE lx_vec3_t *lx_vec3_normalize(const lx_vec3_t *v, lx_vec3_t *out)
 {
     float length = lx_vec3_squared_length(v);
     if (length > 0.0f) {
         float s = 1.0f / lx_sqrtf(length);
-        v->x *= s;
-        v->y *= s;
-        v->z *= s;
+        out->x = v->x * s;
+        out->y = v->y * s;
+        out->z = v->z * s;
     }
 
-    return v;
-}
-
-static LX_INLINE lx_vec3_t *lx_vec3_normalize_to(const lx_vec3_t *v, lx_vec3_t *out)
-{
-    *out = *v;
-    return lx_vec3_normalize(out);
+    return out;
 }
 
 static LX_INLINE float lx_vec3_squared_distance(const lx_vec3_t *a, const lx_vec3_t *b)
@@ -284,6 +278,20 @@ static LX_INLINE float lx_vec3_squared_distance(const lx_vec3_t *a, const lx_vec
 static LX_INLINE float lx_vec3_distance(const lx_vec3_t *a, const lx_vec3_t *b)
 {
     return lx_sqrtf(lx_vec3_squared_distance(a, b));
+}
+
+static LX_INLINE void lx_vec3_transform_3x3(const lx_vec3_t *v, const lx_mat4_t *m, lx_vec3_t *out)
+{
+	out->x = v->x * m->m11 + v->y * m->m21 + v->z * m->m31;
+	out->y = v->x * m->m12 + v->y * m->m22 + v->z * m->m32;
+	out->z = v->x * m->m13 + v->y * m->m23 + v->z * m->m33;
+}
+
+static LX_INLINE void lx_vec3_transform_4x4(const lx_vec3_t *v, const lx_mat4_t *m, lx_vec3_t *out)
+{
+	out->x = v->x * m->m11 + v->y * m->m21 + v->z * m->m31 + m->m41;
+	out->y = v->x * m->m12 + v->y * m->m22 + v->z * m->m32 + m->m42;
+	out->z = v->x * m->m13 + v->y * m->m23 + v->z * m->m33 + m->m43;
 }
 
 /*
@@ -647,9 +655,9 @@ static LX_INLINE void lx_mat4_perspective_fov(float near_plane, float far_plane,
 static LX_INLINE lx_mat4_t *lx_mat4_look_to(const lx_vec3_t* dir, const lx_vec3_t *position, const lx_vec3_t *up, lx_mat4_t *out)
 {
     lx_vec3_t x, y, z;
-    lx_vec3_normalize_to(dir, &z);
-    lx_vec3_normalize(lx_vec3_cross(up, &z, &x));
-	lx_vec3_normalize(lx_vec3_cross(&z, &x, &y));
+    lx_vec3_normalize(dir, &z);
+    lx_vec3_normalize(lx_vec3_cross(up, &z, &x), &x);
+	lx_vec3_normalize(lx_vec3_cross(&z, &x, &y), &y);
 
     float dotx = lx_vec3_dot(&x, position);
     float doty = lx_vec3_dot(&y, position);

@@ -10,6 +10,7 @@
 #include <luxa/renderer/scene.h>
 #include <luxa/renderer/mesh.h>
 #include <luxa/renderer/camera.h>
+#include <luxa/input/input.h>
 
 lx_renderer_t *renderer = NULL;
 lx_camera_t *camera = NULL;
@@ -96,10 +97,10 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	lx_renderer_create(allocator, &renderer, window_handle, window_size, instance_handle);
 
 	lx_buffer_t *shader_buffer = lx_buffer_create_empty(NULL);
-	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\vert.spv");
+	lx_fs_read_file(shader_buffer, "C:\\git\\luxa_cc\\build\\bin\\Debug\\vert.spv");
 	lx_renderer_create_shader(renderer, shader_buffer, 1, LX_SHADER_STAGE_VERTEX);
 
-	lx_fs_read_file(shader_buffer, "C:\\git\\luxa\\build\\bin\\Debug\\frag.spv");
+	lx_fs_read_file(shader_buffer, "C:\\git\\luxa_cc\\build\\bin\\Debug\\frag.spv");
 	lx_renderer_create_shader(renderer, shader_buffer, 2, LX_SHADER_STAGE_FRAGMENT);
 
 	lx_renderer_create_render_pipeline(renderer, 1, 2);
@@ -187,11 +188,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
     camera = lx_camera_create(allocator);
     lx_camera_set_projection(camera, 0.1f, 1000.0f, lx_radians(45.0f));
 
-    lx_vec3_t camera_pos = { 5.0f, 5.0f, -5.0f };
+    lx_vec3_t camera_pos = { 0.0f, 4.0f, -15.0f };
     lx_vec3_t camera_target = { 0.0f, 0.0f, 0.0f };
     lx_vec3_t camera_up = { 0, 1.0f, 0 };
     lx_camera_look_at(camera, &camera_target, &camera_pos, &camera_up);
+	float camera_angle = 0.0;
 
+    lx_input_t *input = lx_input_create(allocator);
+  
 	ShowWindow(window_handle, cmd_show);
 	UpdateWindow(window_handle);
 
@@ -200,13 +204,28 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 
+        lx_input_frame_begin(input, &msg);
+
 		lx_renderer_render_frame(renderer, scene, camera);
 		lx_renderer_device_wait_idle(renderer);
+
+		lx_mat4_t m;
+		lx_mat4_set_rotation_y(lx_radians(camera_angle), &m);
+		lx_vec3_t new_pos;
+		lx_vec3_transform_4x4(&camera_pos, &m, &new_pos);
+		camera_pos = new_pos;
+		lx_camera_look_at(camera, &camera_target, &camera_pos, &camera_up);
+		camera_angle += 0.0001f;
+        if (camera_angle > 360.f)
+            camera_angle = 0.0f;
+
+        lx_input_frame_end(input);
 	}
 
 	LX_LOG_INFO(NULL, "Shutting down...");
 		
 	lx_renderer_destroy(allocator, renderer);
+    lx_input_destroy(input);
 	lx_shutdown_log();
 	
 	return (int)msg.wParam;

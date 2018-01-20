@@ -1094,13 +1094,14 @@ void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_cam
         return;
     }
 
+    // Setup Model->View->Projection
     lx_mat4_t model_view_proj[3];
     lx_mat4_identity(&model_view_proj[0]);
     lx_mat4_identity(&model_view_proj[1]);
     lx_mat4_identity(&model_view_proj[2]);
 
     float aspect_ratio = ((float)renderer->swap_chain->extent.width / (float)renderer->swap_chain->extent.height);
-	lx_mat4_look_at(&(lx_vec3_t) { 0.0f, 0.0f, 0.0f }, &camera->position, &camera->up, &model_view_proj[1]);
+    lx_mat4_look_to(&camera->direction, &camera->position, &camera->up, &model_view_proj[1]);
     lx_mat4_perspective_fov(camera->near_plane, camera->far_plane, camera->fov, aspect_ratio, &model_view_proj[2]);
 
     VkCommandBuffer *command_buffer = lx_array_at(renderer->command_pool->command_buffers, image_index);
@@ -1120,9 +1121,9 @@ void lx_renderer_render_frame(lx_renderer_t *renderer, lx_scene_t *scene, lx_cam
     render_pass_begin_info.renderArea.offset = (VkOffset2D) { 0, 0 };
     render_pass_begin_info.renderArea.extent = renderer->swap_chain->extent;
 
-	VkClearValue clear_values[2];
-	clear_values[0].color = (VkClearColorValue) { 0.0f, 0.0f, 0.0f, 1.0f };
-	clear_values[1].depthStencil = (VkClearDepthStencilValue) { 1.0f, 0 };
+    VkClearValue clear_values[2];
+    clear_values[0].color = (VkClearColorValue) { 0.0f, 0.0f, 0.0f, 1.0f };
+    clear_values[1].depthStencil = (VkClearDepthStencilValue) { 1.0f, 0 };
 
     render_pass_begin_info.clearValueCount = 2;
     render_pass_begin_info.pClearValues = clear_values;

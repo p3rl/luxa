@@ -64,6 +64,11 @@ lx_thread_local_storage_t lx_thread_local_create_storage()
     return storage;
 }
 
+void lx_thread_local_destroy_storage(lx_thread_local_storage_t storage)
+{
+    TlsFree(storage);
+}
+
 void lx_thread_local_set_value(lx_thread_local_storage_t storage, lx_any_t value)
 {
     LX_ASSERT(storage != TLS_OUT_OF_INDEXES, "Invalid thread local storage");

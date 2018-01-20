@@ -21,6 +21,12 @@ bool lx_mutex_try_lock(lx_mutex_t *mutex);
 
 void lx_mutex_unlock(lx_mutex_t *mutex);
 
+#define lx_mutex_scope(mutex, block) do {\
+    lx_mutex_lock(mutex);\
+        block\
+    lx_mutex_unlock(mutex);\
+    } while(0)
+
 typedef struct lx_thread {
     lx_any_t handle;
     uint64_t id;
@@ -37,6 +43,8 @@ bool lx_thread_join(lx_thread_t *thread);
 typedef unsigned long lx_thread_local_storage_t;
 
 lx_thread_local_storage_t lx_thread_local_create_storage();
+
+void lx_thread_local_destroy_storage(lx_thread_local_storage_t storage);
 
 void lx_thread_local_set_value(lx_thread_local_storage_t storage, lx_any_t value);
 

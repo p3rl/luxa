@@ -34,14 +34,12 @@ lx_task_t *try_dequeue_task(task_worker_t *worker)
 {
 	lx_task_t *task = NULL;
 
-	lx_mutex_lock(&worker->mutex);
-
-	if (!lx_queue_is_empty(worker->queue)) {
-		task = *((lx_task_t **)lx_queue_front(worker->queue));
-		lx_queue_dequeue(worker->queue);
-	}
-
-	lx_mutex_unlock(&worker->mutex);
+    lx_mutex_scope(&worker->mutex, {
+        if (!lx_queue_is_empty(worker->queue)) {
+            task = *((lx_task_t **)lx_queue_front(worker->queue));
+            lx_queue_dequeue(worker->queue);
+        }
+    });
 
 	return task;
 }
@@ -70,10 +68,11 @@ lx_task_t *next_task(lx_task_factory_t *factory, task_worker_t *local_worker)
 void execute_next_task(lx_task_factory_t *factory, task_worker_t *worker)
 {
 	lx_task_t *task = next_task(factory, worker);
-	if (!task)
-		return;
-
-	task->f(factory, task, task->arg);
+    if (!task) {
+        return;
+    }
+    
+    task->f(factory, task, task->arg);
 	lx_atomic_decrement_32(&task->unfinishedTasks);
 }
 
@@ -221,14 +220,14 @@ void lx_task_factory_destroy_default(lx_task_factory_t *factory)
 		return;
 
 	state->process_tasks = false;
-	lx_array_for(task_worker_t, *tw, state->workers) {
-		task_worker_t *worker = *tw;
+	lx_array_for(task_worker_t, *worker_ptr, state->workers) {
+		task_worker_t *worker = *worker_ptr;
 		lx_thread_join(&worker->thread);
 		destroy_task_worker(state->allocator, worker);
 	}
 
 	lx_array_destroy(state->workers);
-	//lx_thread_local_destroy_storage(state->local_storage);
+	lx_thread_local_destroy_storage(state->local_storage);
 
 	*state = (factory_state_t) { 0 };
 }

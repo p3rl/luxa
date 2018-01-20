@@ -117,7 +117,7 @@ lx_result_t lx_gpu_create_device(lx_gpu_t *gpu, const char *extensions[], size_t
         ++num_queue_create_infos;
     }
 
-    if (gpu->compute_queue_family_index != UINT32_MAX) {
+    if (gpu->compute_queue_family_index != UINT32_MAX && gpu->compute_queue_family_index != gpu->presentation_queue_family_index) {
         queue_create_infos[num_queue_create_infos].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_infos[num_queue_create_infos].queueFamilyIndex = gpu->compute_queue_family_index;
         queue_create_infos[num_queue_create_infos].queueCount = 1;
